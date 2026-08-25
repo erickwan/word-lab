@@ -186,9 +186,11 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 var SHEET_ID = '15mCt0Q2wyCr1r2FjonEo8xXSIZWBT0c77GRdyFg1FhY';
 var SHEET_GID = '0';
 var SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit?gid=' + SHEET_GID;
-// Optional cloud score sync (Supabase). Leave null for on-device storage only.
-// To enable: REMOTE = { url:'https://YOURPROJECT.supabase.co', key:'YOUR_ANON_KEY' };
-var REMOTE = null;
+// Cloud score sync (Supabase). Set to null to fall back to on-device storage only.
+var REMOTE = {
+  url: 'https://ywoaeadxfettakxehsel.supabase.co',
+  key: 'sb_publishable_grIeEoGO_hvTpDm0dI6bsw_OD4tS041'
+};
 var LS_KEY = 'word-lab-state-v1';
 var DAY = 86400000;
 var INTERVALS = [0, 1, 3, 7, 14];          // days until next review for box 1..5
