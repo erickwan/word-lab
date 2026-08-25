@@ -180,6 +180,7 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 {"id":"assortment-1","word":"assortment","pos":"noun","meaning":"a group of things or people that are similar but have some recognisable differences","example":"We ate an assorment of chocolate.","added":"2026-08-10"}
 ]}</script>
 
+<script src="enrich.js"></script>
 <script>
 (function(){
 "use strict";
@@ -205,6 +206,15 @@ try {
     if (loc && loc.savedAt > state.savedAt) { state = loc; dirty = true; }
   }
 } catch (e) {}
+// practice data recorded before this moment came from pre-launch testing — drop it everywhere
+var RESET_BEFORE = 1787696911490;
+function scrub(s){
+  s.sessions = (s.sessions || []).filter(function(x){ return x.t >= RESET_BEFORE; });
+  Object.keys(s.stats || {}).forEach(function(id){
+    if ((s.stats[id].last || 0) < RESET_BEFORE) delete s.stats[id];
+  });
+}
+scrub(state);
 
 function saveLocal(){
   try { state.savedAt = Date.now(); localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
@@ -423,13 +433,25 @@ function checkTyped(input, word){
 }
 
 /* ---------- question generation ---------- */
+function enrichOf(item){ return (window.ENRICH || {})[item.id] || null; }
 function makeQuestion(item){
   var types = ['meaning', 'wordpick'];
   var blank = findBlank(item);
   if (blank) types.push('blank');
   if (item.word.length <= 12 && item.word.indexOf(' ') < 0) types.push('scramble');
+  var en = enrichOf(item);
+  if (en){
+    (en.quiz || []).forEach(function(t){ types.push(t.type, t.type); });   // authored usage questions, double weight
+  }
   var type = pick(types);
   var q = { item:item, type:type };
+  if (type === 'syn' || type === 'ant' || type === 'cloze' || type === 'scen'){
+    var authored = en.quiz.filter(function(t){ return t.type === type; })[0];
+    q.prompt = authored.prompt || '';
+    q.options = shuffle(authored.options.slice());
+    q.answer = authored.answer;
+    return q;
+  }
 
   if (type === 'meaning'){
     var pool = state.items.filter(function(o){ return o.word !== item.word; });
@@ -651,6 +673,19 @@ function quizView(){
     body = retry + '<div class="qask">Which word means&hellip;</div>' +
       '<p class="sentence" style="font-weight:700;">&ldquo;' + esc(item.meaning) + '&rdquo;</p>' + posChip(item.pos) +
       '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i, 'font-family:Fredoka,sans-serif;font-size:1.1rem;'); }).join('') + '</div>';
+  } else if (q.type === 'syn' || q.type === 'ant'){
+    body = retry + '<div class="qask">' + (q.type === 'syn' ? 'Synonym hunt' : 'Opposite hunt') + '</div>' +
+      '<p class="sentence">Which word means ' + (q.type === 'syn' ? 'almost the <b>same</b> as' : 'the <b>opposite</b> of') + '&hellip;</p>' +
+      '<div class="qword">' + esc(item.word) + '</div>' + posChip(item.pos) +
+      '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i, 'font-family:Fredoka,sans-serif;font-size:1.05rem;'); }).join('') + '</div>';
+  } else if (q.type === 'cloze'){
+    body = retry + '<div class="qask">Which word fits?</div>' +
+      '<p class="sentence">' + esc(q.prompt).replace(/___+/g, '<span class="blank">&nbsp;?&nbsp;</span>') + '</p>' +
+      '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i, 'font-family:Fredoka,sans-serif;font-size:1.05rem;'); }).join('') + '</div>';
+  } else if (q.type === 'scen'){
+    body = retry + '<div class="qask">Spot it in real life</div>' +
+      '<p class="sentence" style="font-weight:700;">' + esc(q.prompt) + '</p>' +
+      '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i); }).join('') + '</div>';
   } else if (q.type === 'blank'){
     body = retry + '<div class="qask">Finish your sentence</div>' +
       '<p class="sentence">' + esc(q.blank.before) + ' <span class="blank">&nbsp;?&nbsp;</span>' + esc(q.blank.after) + '</p>' +
@@ -671,6 +706,9 @@ function quizView(){
     fb = '<div class="fb ' + (f.correct ? 'good' : 'bad') + '">' +
       (f.correct ? pick(['Nice one!', 'You got it!', 'Correct!', 'Boom!']) : 'Not quite &mdash; the answer is “' + esc(q.answer) + '”') +
       (f.detail ? '<div class="note">' + f.detail + '</div>' : '') +
+      (!f.correct && (q.type === 'syn' || q.type === 'ant' || q.type === 'cloze' || q.type === 'scen')
+        ? '<div class="note">Remember: <b>' + esc(item.word) + '</b> means ' + esc(item.meaning) +
+          (enrichOf(item) && enrichOf(item).tip ? '<br>' + esc(enrichOf(item).tip) : '') + '</div>' : '') +
       (!f.correct && !session.queue[session.idx].retry ? '<div class="note">You’ll see this one again before the end.</div>' : '') +
       '</div><div class="center" style="margin-top:16px;"><button class="btn primary" data-act="next">' +
       (session.idx + 1 >= session.queue.length ? 'Finish' : 'Next') + ' &rarr;</button></div>';
@@ -744,7 +782,8 @@ function parentView(){
     return '<span class="acc-pill ' + cls + '">' + p + '%</span>';
   }
   var focus = sorted.filter(function(r){ return r.s.seen > 0 && (r.a === null || r.a < 0.8 || r.s.box <= 2); }).slice(0, 5);
-  var typeNames = { meaning:'Pick the meaning', wordpick:'Pick the word', blank:'Fill in his sentence', scramble:'Unscramble' };
+  var typeNames = { meaning:'Pick the meaning', wordpick:'Pick the word', blank:'Fill in his sentence', scramble:'Unscramble',
+    syn:'Synonyms', ant:'Antonyms', cloze:'New-sentence fit', scen:'Real-life usage' };
   var typeAgg = {};
   state.sessions.forEach(function(ss){
     Object.keys(ss.types || {}).forEach(function(k){
@@ -921,6 +960,7 @@ syncSheet();
 if (REMOTE){
   remoteLoad().then(function(remote){
     var changed = mergeRemote(remote);
+    scrub(state);
     if (changed){ saveLocal(); if (!session) render(); }
     if (dirty) persist().then(function(){ if (!session) render(); });
   }).catch(function(){});
