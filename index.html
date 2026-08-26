@@ -122,6 +122,37 @@ ul.tricky{padding-left:0; list-style:none; margin:10px 0 0;}
 ul.tricky li{padding:8px 0; border-bottom:1px solid var(--line);}
 ul.tricky li:last-child{border-bottom:0;}
 ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
+/* --- list browsing toolbar (My words / Parent) --- */
+.toolbar{display:flex; flex-wrap:wrap; gap:8px; align-items:center; margin:12px 0 6px;}
+.toolbar input.search{flex:1 1 190px; min-width:0; padding:9px 12px; border-radius:12px;
+  border:2px solid var(--line); background:var(--surface2); color:var(--ink); font-family:inherit; font-size:.95rem;}
+.toolbar input.search:focus-visible{outline:3px solid var(--accent); outline-offset:1px;}
+.toolbar select{padding:9px 10px; border-radius:12px; border:2px solid var(--line);
+  background:var(--surface2); color:var(--ink); font-family:inherit; font-size:.88rem; cursor:pointer;}
+.chips{display:flex; flex-wrap:wrap; gap:6px; margin-bottom:6px;}
+.chipbtn{border:2px solid var(--line); background:var(--surface); color:var(--muted); border-radius:999px;
+  padding:5px 12px; font-size:.85rem; font-weight:700; cursor:pointer; font-family:inherit;}
+.chipbtn:hover{border-color:var(--brand);}
+.chipbtn.on{background:var(--brand); color:var(--on-brand); border-color:var(--brand-deep);}
+.chipbtn .n{opacity:.7; font-weight:400; margin-left:4px;}
+.resultcount{color:var(--muted); font-size:.85rem; margin:2px 0 6px;}
+.emptylist{color:var(--muted); text-align:center; padding:26px 10px;}
+.showmore{display:block; margin:14px auto 0;}
+.tblwrap.tall{max-height:60vh; overflow-y:auto;}
+.tblwrap td:not(:first-child), .tblwrap th:not(:first-child){white-space:nowrap;}
+.tblwrap td:first-child{min-width:150px;}
+@media (max-width:560px){
+  .tblwrap td:first-child{min-width:0;}
+  .wordtbl .dots{letter-spacing:0; font-size:.7rem;}
+  .wordtbl th, .wordtbl td{padding:8px 6px;}
+  .wordtbl td:nth-child(4), .wordtbl th:nth-child(4),
+  .wordtbl td:nth-child(5), .wordtbl th:nth-child(5){display:none;}
+}
+.tblwrap.tall thead th{position:sticky; top:0; background:var(--surface); z-index:1;}
+.grouphdr{display:flex; align-items:baseline; gap:8px; margin:16px 0 2px; padding-top:10px; border-top:2px solid var(--line);}
+.grouphdr:first-of-type{border-top:0; padding-top:0; margin-top:4px;}
+.grouphdr h3{margin:0; font-size:1rem;}
+.grouphdr .n{color:var(--muted); font-size:.85rem;}
 #confetti{position:fixed; inset:0; pointer-events:none;}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important;} }
 @media (max-width:480px){
@@ -333,6 +364,8 @@ async function syncSheet(){
 }
 
 /* ---------- stats helpers ---------- */
+var EMPTY_STAT = { box:1, due:0, last:0, seen:0, correct:0, wrong:0 };
+function st0(id){ return state.stats[id] || EMPTY_STAT; }
 function st(id){
   if (!state.stats[id]) state.stats[id] = { box:1, due:0, last:0, seen:0, correct:0, wrong:0 };
   return state.stats[id];
@@ -653,6 +686,137 @@ function confetti(){
   })();
 }
 
+
+/* ---------- list browsing (search / filter / sort) ---------- */
+var browse = {
+  words:  { q:'', f:'all', sort:'az',   limit:30 },
+  parent: { q:'', f:'all', sort:'weak', limit:30 }
+};
+var PAGE = 30;
+
+// One entry per headword, merging multiple senses.
+function wordEntries(){
+  var groups = {}, order = [];
+  state.items.forEach(function(it){
+    if (!groups[it.word]){ groups[it.word] = []; order.push(it.word); }
+    groups[it.word].push(it);
+  });
+  return order.map(function(w){
+    var its = groups[w];
+    var box = 1, seen = 0, correct = 0, wrong = 0, last = 0, due = Infinity, added = '';
+    its.forEach(function(i){
+      var t = st0(i.id);
+      if (t.box > box) box = t.box;
+      seen += t.seen; correct += t.correct; wrong += t.wrong;
+      if (t.last > last) last = t.last;
+      if (t.due < due) due = t.due;
+      if (i.added > added) added = i.added;
+    });
+    var n = correct + wrong;
+    return { word:w, items:its, box:box, seen:seen, acc: n ? correct/n : null,
+             last:last, due: due === Infinity ? 0 : due, added:added,
+             group: seen === 0 ? 'new' : (box >= 4 ? 'mastered' : 'learning') };
+  });
+}
+
+function matchesQuery(e, q){
+  if (!q) return true;
+  q = q.toLowerCase();
+  if (e.word.toLowerCase().indexOf(q) >= 0) return true;
+  return e.items.some(function(i){ return i.meaning.toLowerCase().indexOf(q) >= 0; });
+}
+
+function applyBrowse(entries, b, groupOf){
+  var found = entries.filter(function(e){ return matchesQuery(e, b.q); });
+  var counts = { all: found.length, new:0, learning:0, mastered:0, needs:0 };
+  found.forEach(function(e){
+    if (counts[e.group] !== undefined) counts[e.group]++;
+    if (e.seen > 0 && (e.box <= 2 || (e.acc !== null && e.acc < 0.6))) counts.needs++;
+  });
+  var list = found.filter(function(e){
+    if (b.f === 'all') return true;
+    if (b.f === 'needs') return e.seen > 0 && (e.box <= 2 || (e.acc !== null && e.acc < 0.6));
+    return e.group === b.f;
+  });
+  var by = {
+    az:   function(a,c){ return a.word < c.word ? -1 : a.word > c.word ? 1 : 0; },
+    weak: function(a,c){ return (a.box - c.box) || ((a.acc===null?1.01:a.acc) - (c.acc===null?1.01:c.acc)) || (a.word < c.word ? -1 : 1); },
+    acc:  function(a,c){ return (a.acc===null?1.01:a.acc) - (c.acc===null?1.01:c.acc) || (a.word < c.word ? -1 : 1); },
+    recent: function(a,c){ return (c.added > a.added ? 1 : c.added < a.added ? -1 : 0) || (a.word < c.word ? -1 : 1); },
+    last: function(a,c){ return (c.last - a.last) || (a.word < c.word ? -1 : 1); },
+    due:  function(a,c){ return (a.due - c.due) || (a.word < c.word ? -1 : 1); }
+  };
+  list = list.slice().sort(by[b.sort] || by.az);
+  return { list:list, counts:counts, total:found.length };
+}
+
+function chipsHtml(key, b, counts, defs){
+  return '<div class="chips">' + defs.map(function(d){
+    var n = counts[d[0]];
+    return '<button class="chipbtn' + (b.f === d[0] ? ' on' : '') + '" data-bf="' + key + ':' + d[0] + '">' +
+      d[1] + '<span class="n">' + n + '</span></button>';
+  }).join('') + '</div>';
+}
+
+function toolbarHtml(key, b, sorts, placeholder){
+  return '<div class="toolbar">' +
+    '<input class="search" type="search" id="q-' + key + '" data-bq="' + key + '" placeholder="' + placeholder + '" value="' + esc(b.q) + '">' +
+    '<select data-bs="' + key + '" aria-label="Sort">' +
+      sorts.map(function(o){
+        return '<option value="' + o[0] + '"' + (b.sort === o[0] ? ' selected' : '') + '>' + o[1] + '</option>';
+      }).join('') +
+    '</select></div>';
+}
+
+function showMoreHtml(key, shown, total){
+  if (shown >= total) return '';
+  return '<button class="btn small showmore" data-bm="' + key + '">Show ' +
+    Math.min(PAGE, total - shown) + ' more (' + (total - shown) + ' left)</button>';
+}
+
+
+function parentWordsCard(){
+  var b = browse.parent;
+  var sorts = [['weak','Weakest first'],['az','A to Z'],['acc','Lowest accuracy'],['due','Due soonest'],['last','Recently practiced']];
+  return '<div class="card"><h3 style="margin:0;">Every word</h3>' +
+    toolbarHtml('parent', b, sorts, 'Search a word or meaning') +
+    '<div id="dyn-parent">' + parentWordsDyn() + '</div></div>';
+}
+
+function parentWordsDyn(){
+  var b = browse.parent;
+  var r = applyBrowse(wordEntries(), b);
+  var shown = r.list.slice(0, b.limit);
+  function accPill(a){
+    if (a === null) return '<span class="muted">&mdash;</span>';
+    var p = Math.round(a * 100);
+    return '<span class="acc-pill ' + (p >= 80 ? 'acc-hi' : p >= 60 ? 'acc-mid' : 'acc-lo') + '">' + p + '%</span>';
+  }
+  var rows = shown.map(function(e){
+    var dots = '';
+    for (var i=1; i<=5; i++) dots += '<span class="' + (i <= e.box ? 'on' : 'offd') + '">&#9679;</span>';
+    var m = e.items[0].meaning;
+    return '<tr><td><b>' + esc(e.word) + '</b>' +
+      (e.items.length > 1 ? ' <span class="muted" style="font-size:.75rem;">' + e.items.length + ' meanings</span>' : '') +
+      '<div class="explain" style="font-size:.78rem;">' + esc(m.slice(0, 46)) + (m.length > 46 ? '…' : '') + '</div></td>' +
+      '<td><span class="dots">' + dots + '</span></td>' +
+      '<td>' + accPill(e.acc) + '</td>' +
+      '<td>' + e.seen + '</td>' +
+      '<td>' + relTime(e.last) + '</td>' +
+      '<td>' + (e.seen ? dueLabel(e.due) : '<span class="muted">&mdash;</span>') + '</td></tr>';
+  }).join('');
+
+  return chipsHtml('parent', b, r.counts,
+      [['all','All'],['needs','Needs work'],['learning','Learning'],['mastered','Mastered'],['new','Not started']]) +
+    '<div class="resultcount">Showing ' + shown.length + ' of ' + r.list.length + ' words</div>' +
+    (shown.length
+      ? '<div class="tblwrap' + (shown.length > 12 ? ' tall' : '') + '"><table class="wordtbl"><thead><tr>' +
+        '<th>Word</th><th>Level</th><th>Accuracy</th><th>Seen</th><th>Last</th><th>Next due</th>' +
+        '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      : '<div class="emptylist">No words match this filter.</div>') +
+    showMoreHtml('parent', shown.length, r.list.length);
+}
+
 /* ---------- rendering ---------- */
 var root = document.getElementById('root');
 var view = 'home';
@@ -818,23 +982,33 @@ function endView(){
 }
 
 function wordsView(){
-  var groups = {};
-  var order = [];
-  state.items.forEach(function(it){
-    if (!groups[it.word]){ groups[it.word] = []; order.push(it.word); }
-    groups[it.word].push(it);
-  });
-  return saveBanner() + '<div class="card"><h2 style="margin:0 0 6px;">Word collection <span class="muted" style="font-size:1rem;">(' + order.length + ')</span></h2>' +
-    order.map(function(w){
-      var its = groups[w];
-      var s = st(its[0].id);
-      var box = Math.max.apply(null, its.map(function(i){ return st(i.id).box; }));
-      var dots = '';
-      for (var i=1; i<=5; i++) dots += '<span class="' + (i <= box ? 'on' : 'offd') + '">&#9679;</span>';
-      return '<div class="wordrow"><div><b style="font-family:Fredoka,sans-serif;">' + esc(w) + '</b> ' + posChip(its[0].pos) +
-        its.map(function(i){ return '<div class="explain">' + esc(i.meaning) + '</div>'; }).join('') +
-        '</div><div class="dots">' + dots + '</div></div>';
-    }).join('') + '</div>';
+  var b = browse.words;
+  var sorts = [['az','A to Z'],['weak','Needs practice first'],['recent','Recently added'],['last','Recently practiced']];
+  return saveBanner() +
+    '<div class="card"><h2 style="margin:0;">Word collection <span class="muted" style="font-size:1rem;">(' +
+      wordEntries().length + ')</span></h2>' +
+    toolbarHtml('words', b, sorts, 'Search a word or meaning') +
+    '<div id="dyn-words">' + wordsDyn() + '</div></div>';
+}
+
+function wordsDyn(){
+  var b = browse.words;
+  var r = applyBrowse(wordEntries(), b);
+  var shown = r.list.slice(0, b.limit);
+  var body = shown.length ? shown.map(function(e){
+    var dots = '';
+    for (var i=1; i<=5; i++) dots += '<span class="' + (i <= e.box ? 'on' : 'offd') + '">&#9679;</span>';
+    return '<div class="wordrow"><div><b style="font-family:Fredoka,sans-serif;">' + esc(e.word) + '</b> ' +
+      posChip(e.items[0].pos) +
+      (e.seen === 0 ? ' <span class="chip" style="background:var(--surface2);">not practiced yet</span>' : '') +
+      e.items.map(function(i){ return '<div class="explain">' + esc(i.meaning) + '</div>'; }).join('') +
+      '</div><div class="dots">' + dots + '</div></div>';
+  }).join('') : '<div class="emptylist">No words match “' + esc(b.q) + '”.</div>';
+
+  return chipsHtml('words', b, r.counts,
+      [['all','All'],['needs','Needs practice'],['learning','Learning'],['mastered','Mastered'],['new','Not started']]) +
+    '<div class="resultcount">Showing ' + Math.min(shown.length, r.list.length) + ' of ' + r.list.length + ' words</div>' +
+    body + showMoreHtml('words', shown.length, r.list.length);
 }
 
 function parentView(){
@@ -897,18 +1071,7 @@ function parentView(){
         return '<li><b>' + esc(r.it.word) + '</b> ' + accPill(r.a) + ' <span class="muted">level ' + r.s.box + ' &middot; ' + esc(r.it.meaning) + '</span></li>';
       }).join('') + '</ul></div>' : '') +
     typeHtml +
-    '<div class="card"><h3 style="margin:0 0 8px;">Every word</h3><div class="tblwrap"><table><thead><tr>' +
-    '<th>Word</th><th>Level</th><th>Accuracy</th><th>Seen</th><th>Last</th><th>Next due</th></tr></thead><tbody>' +
-    sorted.map(function(r){
-      var dots = '';
-      for (var i=1; i<=5; i++) dots += '<span class="' + (i <= r.s.box ? 'on' : 'offd') + '">&#9679;</span>';
-      return '<tr><td><b>' + esc(r.it.word) + '</b><div class="explain" style="font-size:.78rem;">' + esc(r.it.meaning.slice(0, 46)) + (r.it.meaning.length > 46 ? '…' : '') + '</div></td>' +
-        '<td><span class="dots">' + dots + '</span></td>' +
-        '<td>' + accPill(r.a) + '</td>' +
-        '<td>' + r.s.seen + '</td>' +
-        '<td>' + relTime(r.s.last) + '</td>' +
-        '<td>' + dueLabel(r.s.due) + '</td></tr>';
-    }).join('') + '</tbody></table></div></div>' +
+    parentWordsCard() +
     sessionsHtml +
     '<div class="card"><h3 style="margin:0 0 6px;">New words</h3>' +
     '<p class="explain">Words load from the <a href="' + SHEET_URL + '" target="_blank" rel="noopener" style="color:var(--brand);">Google Sheet</a> every time the page opens — add rows there and they show up here automatically.</p>' +
@@ -999,6 +1162,27 @@ function syncNote(){
   return lastSync.added ? 'Added ' + lastSync.added + ' new ' + (lastSync.added === 1 ? 'entry' : 'entries') + '!' : 'Everything is up to date.';
 }
 
+/* Browsing controls update only their own list block, so typing in the search
+   box never re-renders (and never blurs) the input itself. */
+function refreshBrowse(key){
+  var el = document.getElementById('dyn-' + key);
+  if (!el) return;
+  el.innerHTML = key === 'words' ? wordsDyn() : parentWordsDyn();
+}
+root.addEventListener('input', function(e){
+  var key = e.target && e.target.dataset && e.target.dataset.bq;
+  if (!key || !browse[key]) return;
+  browse[key].q = e.target.value;
+  browse[key].limit = PAGE;
+  refreshBrowse(key);
+});
+root.addEventListener('change', function(e){
+  var key = e.target && e.target.dataset && e.target.dataset.bs;
+  if (!key || !browse[key]) return;
+  browse[key].sort = e.target.value;
+  browse[key].limit = PAGE;
+  refreshBrowse(key);
+});
 root.addEventListener('click', function(e){
   var t = e.target.closest('button');
   if (!t) return;
@@ -1006,6 +1190,15 @@ root.addEventListener('click', function(e){
     if (session && !session.done && !confirm('Leave this practice round?')) return;
     if (session && !session.done) session = null;
     view = t.dataset.view; render(); return;
+  }
+  if (t.dataset.bf){
+    var pf = t.dataset.bf.split(':');
+    if (browse[pf[0]]){ browse[pf[0]].f = pf[1]; browse[pf[0]].limit = PAGE; refreshBrowse(pf[0]); }
+    return;
+  }
+  if (t.dataset.bm){
+    if (browse[t.dataset.bm]){ browse[t.dataset.bm].limit += PAGE; refreshBrowse(t.dataset.bm); }
+    return;
   }
   var act = t.dataset.act;
   if (act === 'start'){ startSession(); return; }
