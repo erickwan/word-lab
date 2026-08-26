@@ -196,6 +196,7 @@ var REMOTE = {
 var LS_KEY = 'word-lab-state-v1';
 var PROFILE = { name:'Wesley', age:'10 years old', goal:'the vocabulary words he collects himself' };
 var GEN_CFG = REMOTE ? { url: REMOTE.url, key: REMOTE.key } : null;
+var QCACHE = QGEN.Cache('word-lab-qcache-v1', 14 * 86400000);
 var DAY = 86400000;
 var INTERVALS = [0, 1, 3, 7, 14];          // days until next review for box 1..5
 var SESSION_SIZE = 10;
@@ -442,6 +443,7 @@ function makeQuestion(item, entry){
   // missed word falls through to the local generator so it isn't the same twice.
   if (session && session.gen && session.gen[item.id] && !(entry && entry.retry)){
     var g = session.gen[item.id];
+    QCACHE.consume(item.id);   // asked now, so the next review gets a new one
     return { item:item, type:g.type, prompt:g.prompt, options: shuffle(g.options.slice()),
              answer:g.answer, teach:g.teach, generated:true };
   }
@@ -527,7 +529,7 @@ function prepareRound(){
   var items = buildQueue();
   if (!items.length) return null;
   var round = { items: items, questions: {}, state:'pending', why:null };
-  round.promise = QGEN.generate(GEN_CFG, items.map(function(it){
+  round.promise = QGEN.generateCached(QCACHE, GEN_CFG, items.map(function(it){
     return { item: it, history: st(it.id) };
   }), PROFILE).then(function(r){
     round.questions = r.questions || {};
