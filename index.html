@@ -153,6 +153,48 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 .grouphdr:first-of-type{border-top:0; padding-top:0; margin-top:4px;}
 .grouphdr h3{margin:0; font-size:1rem;}
 .grouphdr .n{color:var(--muted); font-size:.85rem;}
+/* --- power-up end-of-round scene --- */
+.pw-scene{position:relative; display:flex; justify-content:center; margin:2px 0; min-height:210px; overflow:hidden; border-radius:14px;}
+.pw-fighter{width:190px; height:auto; position:relative; z-index:2;}
+.pw-scene picture{display:block; position:relative; z-index:2;}
+.pw-gif{width:230px; max-width:78%; height:auto; border-radius:14px; display:block;}
+.pw-scene canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1;}
+@keyframes pw-brace{
+  0%{transform:translateY(0) scaleY(1);}
+  20%{transform:translateY(5px) scaleY(.95);}
+  55%{transform:translateY(-4px) scaleY(1.03);}
+  100%{transform:translateY(0) scaleY(1);}
+}
+@keyframes pw-shake{
+  0%,100%{transform:translateX(0);} 20%{transform:translateX(-3px);}
+  40%{transform:translateX(3px);} 60%{transform:translateX(-2px);} 80%{transform:translateX(2px);}
+}
+@keyframes pw-flash{ 0%{opacity:0;} 12%{opacity:.85;} 100%{opacity:0;} }
+@keyframes pw-pop{ from{opacity:0; transform:scale(.7) translateY(10px);} to{opacity:1; transform:none;} }
+.pw-fighter{animation:pw-brace 1.1s cubic-bezier(.3,1.2,.5,1) both;}
+.pw-ssj .pw-scene{animation:pw-shake .5s ease-in-out .35s 3;}
+.pw-flash{position:absolute; inset:0; background:radial-gradient(circle at 50% 62%, #fff6c9 0%, #ffd23f 35%, transparent 70%);
+  z-index:3; pointer-events:none; animation:pw-flash 1.1s ease-out .3s both;}
+.ki-earned{display:inline-flex; align-items:center; gap:6px; font-family:Fredoka,sans-serif; font-weight:600;
+  color:#0b6f8c; background:rgba(62,139,255,.14); border-radius:999px; padding:4px 14px; margin-top:2px;
+  animation:pw-pop .5s ease-out .7s both;}
+:root[data-theme="dark"] .ki-earned{color:#8fd4ff;}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .ki-earned{color:#8fd4ff;}}
+/* --- dragon ball hunt --- */
+.db-row{display:flex; flex-wrap:wrap; gap:10px; justify-content:center; margin:12px 0 4px;}
+.db-slot{width:46px; height:46px; border-radius:50%;}
+.db-slot.empty{border:2px dashed var(--line); background:var(--surface2); opacity:.55;}
+@keyframes db-appear{ from{opacity:0; transform:scale(.4) rotate(-40deg);} to{opacity:1; transform:none;} }
+.db-slot.filled{animation:db-appear .45s cubic-bezier(.3,1.5,.5,1) both;}
+@keyframes db-glow{ 0%,100%{filter:drop-shadow(0 0 2px rgba(255,170,40,.6));} 50%{filter:drop-shadow(0 0 9px rgba(255,170,40,.95));} }
+.db-ready .db-slot.filled{animation:db-appear .45s cubic-bezier(.3,1.5,.5,1) both, db-glow 1.6s ease-in-out .5s infinite;}
+.dragon-stage{position:relative; min-height:210px; display:flex; align-items:center; justify-content:center;}
+@keyframes dg-rise{ from{opacity:0; transform:translateY(40px) scale(.9);} to{opacity:1; transform:none;} }
+.dragon-stage svg{animation:dg-rise 1s cubic-bezier(.2,1,.4,1) both;}
+@media (prefers-reduced-motion: reduce){
+  .pw-fighter,.pw-ssj .pw-scene,.pw-flash,.db-slot.filled,.db-ready .db-slot.filled,.dragon-stage svg{animation:none;}
+  .pw-flash{display:none;}
+}
 #confetti{position:fixed; inset:0; pointer-events:none;}
 @media (prefers-reduced-motion: reduce){ *{transition:none !important; animation:none !important;} }
 @media (max-width:480px){
@@ -250,6 +292,8 @@ function scrub(s){
   });
 }
 scrub(state);
+if (typeof state.ki !== 'number') state.ki = 0;
+if (typeof state.wishes !== 'number') state.wishes = 0;
 
 function saveLocal(){
   try { state.savedAt = Date.now(); localStorage.setItem(LS_KEY, JSON.stringify(state)); } catch (e) {}
@@ -288,6 +332,8 @@ function mergeRemote(remote){
     var rs = remote.stats[id], ls = state.stats[id];
     if (!ls || rs.last > ls.last){ state.stats[id] = rs; changed = true; }
   });
+  if (typeof remote.ki === 'number' && remote.ki > (state.ki || 0)){ state.ki = remote.ki; changed = true; }
+  if (typeof remote.wishes === 'number' && remote.wishes > (state.wishes || 0)){ state.wishes = remote.wishes; changed = true; }
   var haveItem = {};
   state.items.forEach(function(it){ haveItem[it.id] = 1; });
   (remote.items || []).forEach(function(it){
@@ -649,6 +695,9 @@ function endSession(){
   saveLocal();
   session.done = true;
   session.score = { correct: correct, total: session.total };
+  session.earned = correct;
+  state.ki = (state.ki || 0) + correct;
+  saveLocal();
   render();
   setTimeout(function(){ if (!prepared) prepared = prepareRound(); }, 1500);
   if (REMOTE) persist().then(function(r){
@@ -656,6 +705,229 @@ function endSession(){
     if (n) n.textContent = r.ok ? 'Score synced.' : 'Couldn’t sync right now — the score is saved on this device and will sync later.';
   });
   if (session.total && correct / session.total >= 0.9) confetti();
+}
+
+
+/* ---------- power-up scene + dragon ball hunt ---------- */
+var summoning = false;
+function summonView(){
+  return '<div class="card center home-hero">' +
+    '<div class="qask">The sky goes dark&hellip;</div>' +
+    '<div class="dragon-stage">' + dragonSvg() + '</div>' +
+    '<h1 style="margin:6px 0 4px; font-size:1.7rem;">Your wish is granted!</h1>' +
+    '<p class="muted" style="margin:0 0 18px;">Seven Dragon Balls gathered from ' + (KI_PER_BALL * BALLS) + ' ki of practice.</p>' +
+    '<button class="btn primary" data-act="wish-done">Awesome</button>' +
+    '</div>';
+}
+
+var KI_PER_BALL = 20, BALLS = 7;
+
+function tierFor(pct){
+  if (pct >= 0.999) return 'ssj';
+  if (pct >= 0.7)   return 'strong';
+  if (pct >= 0.4)   return 'steady';
+  return 'calm';
+}
+var TIER_COLOR = {
+  ssj:    { aura:'#FFD23F', aura2:'#FFA61A', hair:'#FFD23F', glow:'rgba(255,210,63,.55)' },
+  strong: { aura:'#7EC8FF', aura2:'#3E8BFF', hair:'#2f3646', glow:'rgba(62,139,255,.45)' },
+  steady: { aura:'#9FD8FF', aura2:'#68A8E8', hair:'#2f3646', glow:'rgba(104,168,232,.35)' },
+  calm:   { aura:'#C3D3E4', aura2:'#93A9C0', hair:'#2f3646', glow:'rgba(147,169,192,.3)' }
+};
+
+var PW_GIF_WEBP = 'https://media.giphy.com/media/UBB6f0hKhlShy/giphy.webp';
+var PW_GIF = 'https://media.giphy.com/media/UBB6f0hKhlShy/giphy.gif';
+
+function powerScene(tier){
+  return '<div class="pw-scene" id="pw-scene">' +
+    '<picture id="pw-pic">' +
+      '<source srcset="' + PW_GIF_WEBP + '" type="image/webp">' +
+      '<img class="pw-gif" id="pw-gif" src="' + PW_GIF + '" alt="Powering up" decoding="async">' +
+    '</picture>' +
+    '<div id="pw-fallback" style="display:none;">' + fighterSvg(tier) + '</div>' +
+    '</div>';
+}
+
+// If the clip cannot be reached, quietly swap in the drawn fighter instead.
+function watchPowerGif(){
+  var img = document.getElementById('pw-gif');
+  if (!img || img.dataset.watched) return;
+  img.dataset.watched = '1';
+  function fail(){
+    var pic = document.getElementById('pw-pic');
+    var fb = document.getElementById('pw-fallback');
+    if (pic) pic.style.display = 'none';
+    if (fb) fb.style.display = 'block';
+  }
+  img.addEventListener('error', fail);
+  if (img.complete && img.naturalWidth === 0) fail();
+}
+
+function fighterSvg(tier){
+  var c = TIER_COLOR[tier];
+  var ssj = tier === 'ssj';
+  // Hair sits behind the head with its valleys BELOW the top of the skull, so
+  // the spikes rise out of a connected mass instead of floating apart.
+  // A full mass of hair surrounding the head - wider than the skull and reaching
+  // below the ears - so the spikes read as hair volume, not a crown on top.
+  var hair = ssj
+    ? '<path d="M66 90 C60 60 64 32 74 14 L81 48 L89 6 L96 44 L104 2 L111 42 L121 8 L127 46 C137 30 140 62 134 90 Z" fill="' + c.hair + '"/>'
+    : '<path d="M68 90 C63 62 67 38 76 22 L83 52 L90 18 L97 48 L104 14 L111 46 L120 20 L126 50 C135 38 138 64 132 90 Z" fill="' + c.hair + '"/>';
+  var skin = '#f2cfa8', gi = '#ea7c2a', giDark = '#c9611b';
+
+  return '<svg class="pw-fighter" viewBox="0 0 200 244" role="img" aria-label="A fighter powering up">' +
+    '<defs>' +
+      '<radialGradient id="pwAura" cx="50%" cy="58%" r="55%">' +
+        '<stop offset="0%" stop-color="' + c.aura + '" stop-opacity=".75"/>' +
+        '<stop offset="50%" stop-color="' + c.aura2 + '" stop-opacity=".28"/>' +
+        '<stop offset="100%" stop-color="' + c.aura2 + '" stop-opacity="0"/>' +
+      '</radialGradient>' +
+      '<linearGradient id="pwCol" x1="0" y1="1" x2="0" y2="0">' +
+        '<stop offset="0%" stop-color="' + c.aura + '" stop-opacity=".5"/>' +
+        '<stop offset="100%" stop-color="' + c.aura + '" stop-opacity="0"/>' +
+      '</linearGradient>' +
+    '</defs>' +
+    '<ellipse cx="100" cy="140" rx="86" ry="102" fill="url(#pwAura)"/>' +
+    '<path d="M58 236 C64 152 76 96 100 36 C124 96 136 152 142 236 Z" fill="url(#pwCol)"/>' +
+    hair +
+    '<circle cx="100" cy="62" r="19" fill="' + skin + '"/>' +
+    '<circle cx="93" cy="59" r="2.8" fill="#2b3040"/><circle cx="107" cy="59" r="2.8" fill="#2b3040"/>' +
+    '<path d="M94 72 q6 5 12 0" stroke="#8a5240" stroke-width="2.6" fill="none" stroke-linecap="round"/>' +
+    // limbs as thick round strokes so they read as solid at small sizes
+    '<path d="M82 100 C66 110 56 126 55 142" stroke="' + gi + '" stroke-width="19" fill="none" stroke-linecap="round"/>' +
+    '<path d="M118 100 C134 110 144 126 145 142" stroke="' + gi + '" stroke-width="19" fill="none" stroke-linecap="round"/>' +
+    // torso over the shoulders
+    '<path d="M100 82 C85 82 76 92 74 108 L72 156 L128 156 L126 108 C124 92 115 82 100 82 Z" fill="' + gi + '"/>' +
+    '<path d="M100 82 L92 156 L108 156 Z" fill="#f4f6f8"/>' +
+    '<path d="M72 156 L128 156 L127 167 L73 167 Z" fill="#2f5fa8"/>' +
+    '<circle cx="55" cy="146" r="12.5" fill="' + skin + '"/><circle cx="145" cy="146" r="12.5" fill="' + skin + '"/>' +
+    // braced legs
+    '<path d="M86 167 C82 190 76 208 72 220" stroke="' + gi + '" stroke-width="21" fill="none" stroke-linecap="round"/>' +
+    '<path d="M114 167 C118 190 124 208 128 220" stroke="' + gi + '" stroke-width="21" fill="none" stroke-linecap="round"/>' +
+    '<path d="M74 172 h52" stroke="' + giDark + '" stroke-width="3" opacity=".35"/>' +
+    '<ellipse cx="70" cy="226" rx="17" ry="7.5" fill="#2f3646"/>' +
+    '<ellipse cx="130" cy="226" rx="17" ry="7.5" fill="#2f3646"/>' +
+    '</svg>';
+}
+
+/* Rising ki motes and lifted debris. Density scales with the score. */
+function auraBurst(host, tier, correct, total){
+  if (!host) return;
+  if (window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches) return;
+  var c = TIER_COLOR[tier];
+  var cv = document.createElement('canvas');
+  host.insertBefore(cv, host.firstChild);
+  var rect = host.getBoundingClientRect();
+  var W = cv.width = Math.max(1, Math.round(rect.width));
+  var H = cv.height = Math.max(1, Math.round(rect.height));
+  var ctx = cv.getContext('2d');
+  var strength = total ? correct / total : 0;
+
+  var motes = [], pebbles = [];
+  var moteCount = 14 + Math.round(strength * 46);
+  for (var i = 0; i < moteCount; i++){
+    motes.push({ x: W/2 + (Math.random()-0.5) * W * 0.42, y: H * (0.55 + Math.random()*0.5),
+                 vy: 1.1 + Math.random() * (1.4 + strength * 2.4), r: 1.6 + Math.random()*2.6,
+                 life: 1, drift: (Math.random()-0.5) * 0.5 });
+  }
+  for (var j = 0; j < 6 + Math.round(strength * 8); j++){
+    pebbles.push({ x: W/2 + (Math.random()-0.5) * W * 0.6, y: H * (0.86 + Math.random()*0.1),
+                   vy: 0.5 + Math.random() * (0.7 + strength), s: 2.5 + Math.random()*3.5,
+                   a: Math.random()*Math.PI, spin:(Math.random()-0.5)*0.16, life: 1 });
+  }
+  var frames = 0;
+  (function tick(){
+    ctx.clearRect(0, 0, W, H);
+    motes.forEach(function(m){
+      m.y -= m.vy; m.x += m.drift; m.life -= 0.010;
+      if (m.life <= 0){ m.y = H * (0.8 + Math.random()*0.2); m.x = W/2 + (Math.random()-0.5)*W*0.42; m.life = 1; }
+      ctx.globalAlpha = Math.max(0, m.life) * 0.85;
+      ctx.fillStyle = c.aura;
+      ctx.beginPath(); ctx.ellipse(m.x, m.y, m.r, m.r * 2.1, 0, 0, Math.PI*2); ctx.fill();
+    });
+    pebbles.forEach(function(p){
+      p.y -= p.vy; p.a += p.spin; p.life -= 0.006;
+      if (p.life <= 0){ p.y = H * 0.92; p.life = 1; }
+      ctx.globalAlpha = Math.max(0, p.life) * 0.7;
+      ctx.save(); ctx.translate(p.x, p.y); ctx.rotate(p.a);
+      ctx.fillStyle = '#8a8f98';
+      ctx.fillRect(-p.s/2, -p.s/2, p.s, p.s * 0.8);
+      ctx.restore();
+    });
+    ctx.globalAlpha = 1;
+    if (++frames < 200) requestAnimationFrame(tick);
+    else cv.remove();
+  })();
+}
+
+function kiIcon(size){
+  return '<svg width="' + size + '" height="' + size + '" viewBox="0 0 20 20" aria-hidden="true" style="vertical-align:-3px;">' +
+    '<circle cx="10" cy="10" r="7" fill="#7EC8FF"/><circle cx="10" cy="10" r="4" fill="#fff" opacity=".85"/></svg>';
+}
+
+/* --- Dragon Balls --- */
+function ballSvg(stars, size){
+  var pts = {
+    1:[[0,0]], 2:[[-4,0],[4,0]], 3:[[0,-5],[-5,3],[5,3]],
+    4:[[-4,-4],[4,-4],[-4,4],[4,4]], 5:[[-5,-5],[5,-5],[0,0],[-5,5],[5,5]],
+    6:[[-5,-5],[5,-5],[-5,0],[5,0],[-5,5],[5,5]],
+    7:[[-5,-6],[5,-6],[-6,0],[0,0],[6,0],[-5,6],[5,6]]
+  }[stars] || [[0,0]];
+  var star = '';
+  pts.forEach(function(pt){
+    star += '<path transform="translate(' + (23 + pt[0]) + ' ' + (23 + pt[1]) + ') scale(.30)" ' +
+      'd="M0 -11 L3 -3.5 L11 -3.5 L4.5 1.5 L7 9.5 L0 4.8 L-7 9.5 L-4.5 1.5 L-11 -3.5 L-3 -3.5 Z" fill="#d8382b"/>';
+  });
+  return '<svg class="db-slot filled" width="' + size + '" height="' + size + '" viewBox="0 0 46 46" ' +
+    'role="img" aria-label="' + stars + '-star dragon ball">' +
+    '<defs><radialGradient id="dbg' + stars + '" cx="36%" cy="30%" r="72%">' +
+      '<stop offset="0%" stop-color="#ffe9a8"/><stop offset="55%" stop-color="#f5b73f"/>' +
+      '<stop offset="100%" stop-color="#d68b16"/></radialGradient></defs>' +
+    '<circle cx="23" cy="23" r="21" fill="url(#dbg' + stars + ')"/>' +
+    '<ellipse cx="15" cy="14" rx="6" ry="4" fill="#fff" opacity=".55"/>' + star + '</svg>';
+}
+
+function dragonSvg(){
+  var BODY = "M18 196 C58 196 72 158 106 146 C144 132 150 96 128 78 C104 58 118 26 154 24 C196 22 212 50 206 76 C200 100 216 116 240 112";
+  return '<svg viewBox="0 0 330 215" width="100%" style="max-width:330px" role="img" aria-label="A great dragon rises and grants a wish">' +
+    '<path d="' + BODY + '" fill="none" stroke="#2a7d51" stroke-width="21" stroke-linecap="round" stroke-linejoin="round"/>' +
+    '<path d="' + BODY + '" fill="none" stroke="#4fbe80" stroke-width="12" stroke-linecap="round" stroke-linejoin="round"/>' +
+    // little dorsal spines along the neck
+    '<g fill="#2a7d51">' +
+      '<path d="M120 62 l10 -13 l3 13 z"/><path d="M150 34 l7 -15 l7 13 z"/><path d="M186 34 l12 -10 l2 14 z"/>' +
+    '</g>' +
+    // head
+    '<path d="M236 96 C258 90 282 96 292 110 C300 122 294 136 278 138 C258 140 240 128 234 114 Z" fill="#4fbe80" stroke="#2a7d51" stroke-width="5" stroke-linejoin="round"/>' +
+    // horns
+    '<path d="M256 98 L250 74 L268 92 Z" fill="#2a7d51"/>' +
+    '<path d="M276 102 L280 78 L290 98 Z" fill="#2a7d51"/>' +
+    // eye + nostril
+    '<circle cx="272" cy="114" r="6" fill="#fff"/><circle cx="273" cy="114" r="3" fill="#d8382b"/>' +
+    '<circle cx="290" cy="122" r="2.4" fill="#2a7d51"/>' +
+    // whiskers streaming back
+    '<path d="M262 132 C240 146 214 146 196 136" stroke="#2a7d51" stroke-width="4.5" fill="none" stroke-linecap="round"/>' +
+    '<path d="M276 138 C258 158 228 162 208 154" stroke="#2a7d51" stroke-width="4.5" fill="none" stroke-linecap="round"/>' +
+    '</svg>';
+}
+
+function dragonBallCard(){
+  var ki = state.ki || 0;
+  var have = Math.min(BALLS, Math.floor(ki / KI_PER_BALL));
+  var ready = have >= BALLS;
+  var slots = '';
+  for (var i = 1; i <= BALLS; i++){
+    slots += i <= have ? ballSvg(i, 46) : '<div class="db-slot empty"></div>';
+  }
+  var toNext = ready ? 0 : (KI_PER_BALL * (have + 1)) - ki;
+  return '<div class="card center' + (ready ? ' db-ready' : '') + '">' +
+    '<h3 style="margin:0 0 2px;">Dragon Ball hunt</h3>' +
+    '<p class="explain" style="margin:0;">' +
+      (ready ? 'All seven! Summon the dragon.' : have + ' of ' + BALLS + ' found &middot; ' + toNext + ' more ki until the next one') +
+    '</p>' +
+    '<div class="db-row">' + slots + '</div>' +
+    (ready ? '<button class="btn accent" data-act="summon">Summon the dragon</button>' : '') +
+    ((state.wishes || 0) ? '<p class="explain" style="margin:8px 0 0;">Wishes granted: ' + state.wishes + '</p>' : '') +
+    '</div>';
 }
 
 /* ---------- confetti ---------- */
@@ -862,6 +1134,7 @@ function homeView(){
     '<div class="tile"><div class="v">' + state.items.length + '</div><div class="l">words collected</div></div>' +
     '<div class="tile"><div class="v">' + practiced + '</div><div class="l">practice rounds</div></div>' +
     '</div>' +
+    dragonBallCard() +
     '<p class="explain center">Words you miss come back sooner. Words you know move up levels and rest longer &mdash; level 5 words only visit every two weeks.</p>';
 }
 
@@ -959,8 +1232,12 @@ function endView(){
   var sc = session.score;
   var pct = sc.total ? sc.correct / sc.total : 0;
   var stars = pct >= 0.9 ? 3 : pct >= 0.7 ? 2 : pct >= 0.5 ? 1 : 0;
-  var starHtml = '<div class="stars">' +
-    [0,1,2].map(function(i){ return '<span class="' + (i < stars ? '' : 'off') + '">&#9733;</span>'; }).join('') + '</div>';
+  var tier = tierFor(pct);
+  var starHtml =
+    powerScene(tier) +
+    '<div class="stars">' +
+    [0,1,2].map(function(i){ return '<span class="' + (i < stars ? '' : 'off') + '">&#9733;</span>'; }).join('') + '</div>' +
+    (session.earned ? '<div class="ki-earned">' + kiIcon(15) + '+' + session.earned + ' ki</div>' : '');
   var missedIds = Object.keys(session.missed);
   var missedHtml = '';
   if (missedIds.length){
@@ -971,7 +1248,7 @@ function endView(){
       }).join('') + '</ul></div>';
   }
   var praise = pct >= 0.9 ? 'Amazing round!' : pct >= 0.7 ? 'Great work!' : pct >= 0.5 ? 'Good practice!' : 'Tough round — those words will come back soon!';
-  return '<div class="card center home-hero">' + starHtml +
+  return '<div class="card center home-hero pw-' + tier + '">' + starHtml +
     '<h1 style="margin:8px 0 4px;">' + praise + '</h1>' +
     '<div class="big-num">' + sc.correct + '<span class="muted" style="font-size:1.4rem;"> / ' + sc.total + '</span></div>' +
     (session.bestStreak >= 3 ? '<p class="streak" style="margin:8px 0 0;">&#128293; Best streak: ' + session.bestStreak + '</p>' : '') +
@@ -1096,7 +1373,8 @@ function buildingView(){
 function render(){
   var html = header();
   if (view === 'home'){
-    if (awaitingRound) html += buildingView();
+    if (summoning) html += summonView();
+    else if (awaitingRound) html += buildingView();
     else if (session && !session.done) html += quizView();
     else if (session && session.done) html += endView();
     else html += homeView();
@@ -1104,6 +1382,8 @@ function render(){
   else html += parentView();
   root.innerHTML = html;
   if (session && !session.done && session.q && session.q.type === 'scramble' && !session.answered) renderScramble();
+  watchPowerGif();
+
   var inp = document.getElementById('typed');
   if (inp && !session.answered){
     inp.focus();
@@ -1201,6 +1481,16 @@ root.addEventListener('click', function(e){
     return;
   }
   var act = t.dataset.act;
+  if (act === 'summon'){ summoning = true; render(); confetti(); return; }
+  if (act === 'wish-done'){
+    summoning = false;
+    state.ki = Math.max(0, (state.ki || 0) - KI_PER_BALL * BALLS);
+    state.wishes = (state.wishes || 0) + 1;
+    saveLocal();
+    if (REMOTE) persist();
+    render();
+    return;
+  }
   if (act === 'start'){ startSession(); return; }
   if (act === 'skip-gen'){
     var pend = awaitingRound; awaitingRound = null;

@@ -9,3 +9,10 @@ A spaced-repetition vocabulary trainer for Wesley, hosted on GitHub Pages.
 - **Scores** persist in `localStorage` per device. Optional cross-device sync via Supabase: set the `REMOTE` config at the top of the script in `index.html`.
 
 Single static file (`index.html`), no build step.
+
+## Credits
+
+The power-up clip on the end-of-round screen is embedded from GIPHY
+(https://giphy.com/gifs/super-saiyan-UBB6f0hKhlShy) and served from GIPHY's CDN
+rather than copied into this repo. If it cannot be reached, the app falls back
+to a drawn SVG fighter so the screen still works offline.
