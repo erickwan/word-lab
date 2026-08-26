@@ -12,7 +12,17 @@ Single static file (`index.html`), no build step.
 
 ## Credits
 
-The power-up clip on the end-of-round screen is embedded from GIPHY
-(https://giphy.com/gifs/super-saiyan-UBB6f0hKhlShy) and served from GIPHY's CDN
-rather than copied into this repo. If it cannot be reached, the app falls back
-to a drawn SVG fighter so the screen still works offline.
+Celebration clips are embedded from GIPHY's CDN rather than copied into this
+repo. One is picked at random when a round ends, never repeating twice in a row;
+the three celebratory ones are held back on a weak round so the clip matches the
+message. A seventh clip plays when the Dragon Balls are cashed in. If a clip
+cannot be reached, the app falls back to drawn SVG art so the screen still works
+offline.
+
+- https://giphy.com/gifs/super-saiyan-UBB6f0hKhlShy
+- https://giphy.com/gifs/dragon-ball-z-goku-hxCB1Qf11SrU4
+- https://giphy.com/gifs/anime-dragon-goku-eUIb94IVB7pIBRoF0A
+- https://giphy.com/gifs/thumbs-up-goku-dragonball-z-11YMhfLfGoq5Gg
+- https://giphy.com/gifs/like-a-boss-125cxELHOpsLra
+- https://giphy.com/gifs/goku-dragon-ball-master-roshi-RihThkWxzFENW
+- https://giphy.com/gifs/anime-shenron-dragonballdaima-mD78vEbuQRibX0VJrH (dragon summon)

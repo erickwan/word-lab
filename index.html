@@ -155,9 +155,12 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 .grouphdr .n{color:var(--muted); font-size:.85rem;}
 /* --- power-up end-of-round scene --- */
 .pw-scene{position:relative; display:flex; justify-content:center; margin:2px 0; min-height:210px; overflow:hidden; border-radius:14px;}
-.pw-fighter{width:190px; height:auto; position:relative; z-index:2;}
-.pw-scene picture{display:block; position:relative; z-index:2;}
-.pw-gif{width:230px; max-width:78%; height:auto; border-radius:14px; display:block;}
+.pw-fighter{width:170px; height:auto; position:relative; z-index:2;}
+.clip-wrap{position:relative; z-index:2;}
+.clip-wrap picture{display:block;}
+.clip-img{height:auto; display:block; border-radius:14px;}
+.pw-gif{max-height:200px; width:auto; max-width:86%; margin:0 auto;}
+.dragon-gif{width:100%; max-width:320px; margin:0 auto;}
 .pw-scene canvas{position:absolute; inset:0; width:100%; height:100%; pointer-events:none; z-index:1;}
 @keyframes pw-brace{
   0%{transform:translateY(0) scaleY(1);}
@@ -696,6 +699,7 @@ function endSession(){
   session.done = true;
   session.score = { correct: correct, total: session.total };
   session.earned = correct;
+  session.clip = pickClip(session.total ? correct / session.total : 0);
   state.ki = (state.ki || 0) + correct;
   saveLocal();
   render();
@@ -713,7 +717,7 @@ var summoning = false;
 function summonView(){
   return '<div class="card center home-hero">' +
     '<div class="qask">The sky goes dark&hellip;</div>' +
-    '<div class="dragon-stage">' + dragonSvg() + '</div>' +
+    '<div class="dragon-stage">' + clipMarkup(DRAGON_CLIP, 'dragon-gif', dragonSvg()) + '</div>' +
     '<h1 style="margin:6px 0 4px; font-size:1.7rem;">Your wish is granted!</h1>' +
     '<p class="muted" style="margin:0 0 18px;">Seven Dragon Balls gathered from ' + (KI_PER_BALL * BALLS) + ' ki of practice.</p>' +
     '<button class="btn primary" data-act="wish-done">Awesome</button>' +
@@ -735,32 +739,72 @@ var TIER_COLOR = {
   calm:   { aura:'#C3D3E4', aura2:'#93A9C0', hair:'#2f3646', glow:'rgba(147,169,192,.3)' }
 };
 
-var PW_GIF_WEBP = 'https://media.giphy.com/media/UBB6f0hKhlShy/giphy.webp';
-var PW_GIF = 'https://media.giphy.com/media/UBB6f0hKhlShy/giphy.gif';
+/* Celebration clips, embedded from GIPHY's CDN. One is picked at random when a
+   round ends; the previous pick is skipped so the same clip never repeats twice
+   in a row. If a clip cannot be loaded, the drawn fighter takes its place. */
+// winOnly clips read as gloating, so they are held back on a weak round -- a
+// "Tough round" message under a smug thumbs-up undercuts itself. Power-up clips
+// suit any score, since powering up to try again is the right note either way.
+var PW_CLIPS = [
+  { id:'UBB6f0hKhlShy',      alt:'Powering up' },
+  { id:'hxCB1Qf11SrU4',      alt:'Charging up' },
+  { id:'eUIb94IVB7pIBRoF0A', alt:'Unleashing energy' },
+  { id:'11YMhfLfGoq5Gg',     alt:'Thumbs up',      winOnly:true },
+  { id:'125cxELHOpsLra',     alt:'Like a boss',    winOnly:true },
+  { id:'RihThkWxzFENW',      alt:'Celebrating',    winOnly:true }
+];
+var DRAGON_CLIP = { id:'mD78vEbuQRibX0VJrH', alt:'The dragon appears' };
+var LAST_CLIP_KEY = 'word-lab-lastclip';
 
-function powerScene(tier){
-  return '<div class="pw-scene" id="pw-scene">' +
-    '<picture id="pw-pic">' +
-      '<source srcset="' + PW_GIF_WEBP + '" type="image/webp">' +
-      '<img class="pw-gif" id="pw-gif" src="' + PW_GIF + '" alt="Powering up" decoding="async">' +
+function clipUrl(id, ext){ return 'https://media.giphy.com/media/' + id + '/giphy.' + ext; }
+
+function pickClip(pct){
+  var pool = PW_CLIPS.filter(function(c){ return pct >= 0.7 || !c.winOnly; });
+  var lastId = null;
+  try { lastId = localStorage.getItem(LAST_CLIP_KEY); } catch (e) {}
+  var fresh = pool.filter(function(c){ return c.id !== lastId; });
+  if (fresh.length) pool = fresh;                       // never the same clip twice running
+  var clip = pool[Math.floor(Math.random() * pool.length)];
+  try { localStorage.setItem(LAST_CLIP_KEY, clip.id); } catch (e) {}
+  return clip;
+}
+
+// picture + hidden fallback; watchClips() swaps them if the clip fails to load
+function clipMarkup(clip, imgClass, fallbackHtml){
+  return '<div class="clip-wrap">' +
+    '<picture>' +
+      '<source srcset="' + clipUrl(clip.id, 'webp') + '" type="image/webp">' +
+      '<img class="clip-img ' + imgClass + '" src="' + clipUrl(clip.id, 'gif') + '" ' +
+        'alt="' + clip.alt + '" decoding="async">' +
     '</picture>' +
-    '<div id="pw-fallback" style="display:none;">' + fighterSvg(tier) + '</div>' +
+    '<div class="clip-fallback" style="display:none;">' + fallbackHtml + '</div>' +
     '</div>';
 }
 
-// If the clip cannot be reached, quietly swap in the drawn fighter instead.
-function watchPowerGif(){
-  var img = document.getElementById('pw-gif');
-  if (!img || img.dataset.watched) return;
-  img.dataset.watched = '1';
-  function fail(){
-    var pic = document.getElementById('pw-pic');
-    var fb = document.getElementById('pw-fallback');
-    if (pic) pic.style.display = 'none';
-    if (fb) fb.style.display = 'block';
+function powerScene(tier, clip){
+  return '<div class="pw-scene" id="pw-scene">' +
+    clipMarkup(clip || PW_CLIPS[0], 'pw-gif', fighterSvg(tier)) +
+    '</div>';
+}
+
+function watchClips(){
+  var imgs = document.querySelectorAll('.clip-img');
+  for (var k = 0; k < imgs.length; k++){
+    (function(img){
+      if (img.dataset.watched) return;
+      img.dataset.watched = '1';
+      function fail(){
+        var wrap = img.closest('.clip-wrap');
+        if (!wrap) return;
+        var pic = wrap.querySelector('picture');
+        var fb = wrap.querySelector('.clip-fallback');
+        if (pic) pic.style.display = 'none';
+        if (fb) fb.style.display = 'block';
+      }
+      img.addEventListener('error', fail);
+      if (img.complete && img.naturalWidth === 0) fail();
+    })(imgs[k]);
   }
-  img.addEventListener('error', fail);
-  if (img.complete && img.naturalWidth === 0) fail();
 }
 
 function fighterSvg(tier){
@@ -1234,7 +1278,7 @@ function endView(){
   var stars = pct >= 0.9 ? 3 : pct >= 0.7 ? 2 : pct >= 0.5 ? 1 : 0;
   var tier = tierFor(pct);
   var starHtml =
-    powerScene(tier) +
+    powerScene(tier, session.clip) +
     '<div class="stars">' +
     [0,1,2].map(function(i){ return '<span class="' + (i < stars ? '' : 'off') + '">&#9733;</span>'; }).join('') + '</div>' +
     (session.earned ? '<div class="ki-earned">' + kiIcon(15) + '+' + session.earned + ' ki</div>' : '');
@@ -1382,7 +1426,7 @@ function render(){
   else html += parentView();
   root.innerHTML = html;
   if (session && !session.done && session.q && session.q.type === 'scramble' && !session.answered) renderScramble();
-  watchPowerGif();
+  watchClips();
 
   var inp = document.getElementById('typed');
   if (inp && !session.answered){
