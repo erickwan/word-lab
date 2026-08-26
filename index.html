@@ -181,6 +181,7 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 ]}</script>
 
 <script src="enrich.js"></script>
+<script src="generate.js"></script>
 <script>
 (function(){
 "use strict";
@@ -193,6 +194,8 @@ var REMOTE = {
   key: 'sb_publishable_grIeEoGO_hvTpDm0dI6bsw_OD4tS041'
 };
 var LS_KEY = 'word-lab-state-v1';
+var PROFILE = { name:'Wesley', age:'10 years old', goal:'the vocabulary words he collects himself' };
+var GEN_CFG = REMOTE ? { url: REMOTE.url, key: REMOTE.key } : null;
 var DAY = 86400000;
 var INTERVALS = [0, 1, 3, 7, 14];          // days until next review for box 1..5
 var SESSION_SIZE = 10;
@@ -434,7 +437,17 @@ function checkTyped(input, word){
 
 /* ---------- question generation ---------- */
 function enrichOf(item){ return (window.ENRICH || {})[item.id] || null; }
-function makeQuestion(item){
+function makeQuestion(item, entry){
+  // Freshly generated question for this word, when one came back. A repeat of a
+  // missed word falls through to the local generator so it isn't the same twice.
+  if (session && session.gen && session.gen[item.id] && !(entry && entry.retry)){
+    var g = session.gen[item.id];
+    return { item:item, type:g.type, prompt:g.prompt, options: shuffle(g.options.slice()),
+             answer:g.answer, teach:g.teach, generated:true };
+  }
+  return makeLocalQuestion(item);
+}
+function makeLocalQuestion(item){
   var types = ['meaning', 'wordpick'];
   var blank = findBlank(item);
   if (blank) types.push('blank');
@@ -505,19 +518,56 @@ function buildQueue(){
   }
   return shuffle(q);
 }
-function startSession(){
+/* A round is prepared (queue built + questions requested) before Wesley presses
+   Start, so generation latency is hidden. */
+var prepared = null;
+var awaitingRound = null;
+
+function prepareRound(){
   var items = buildQueue();
-  if (!items.length) return;
+  if (!items.length) return null;
+  var round = { items: items, questions: {}, state:'pending', why:null };
+  round.promise = QGEN.generate(GEN_CFG, items.map(function(it){
+    return { item: it, history: st(it.id) };
+  }), PROFILE).then(function(r){
+    round.questions = r.questions || {};
+    round.state = r.ok ? 'ready' : 'failed';
+    round.why = r.why;
+    return round;
+  });
+  return round;
+}
+function prefetchRound(){
+  if (prepared || session) return;
+  prepared = prepareRound();
+}
+function startSession(){
+  var round = prepared || prepareRound();
+  prepared = null;
+  if (!round) return;
+  if (round.state === 'pending'){
+    awaitingRound = round;
+    render();
+    round.promise.then(function(){
+      if (awaitingRound === round){ awaitingRound = null; launchRound(round); }
+    });
+    return;
+  }
+  launchRound(round);
+}
+function launchRound(round){
   session = {
-    queue: items.map(function(it){ return { item:it, retry:false }; }),
-    idx: 0, total: items.length, firstTry: {}, streak: 0, bestStreak: 0,
-    types: {}, missed: {}, done: false
+    queue: round.items.map(function(it){ return { item:it, retry:false }; }),
+    idx: 0, total: round.items.length, firstTry: {}, streak: 0, bestStreak: 0,
+    types: {}, missed: {}, done: false,
+    gen: round.questions || {}, genState: round.state
   };
   nextQuestion();
 }
 function nextQuestion(){
   if (session.idx >= session.queue.length){ endSession(); return; }
-  session.q = makeQuestion(session.queue[session.idx].item);
+  var entry = session.queue[session.idx];
+  session.q = makeQuestion(entry.item, entry);
   session.answered = false;
   session.chosen = -1;
   render();
@@ -565,6 +615,7 @@ function endSession(){
   session.done = true;
   session.score = { correct: correct, total: session.total };
   render();
+  setTimeout(function(){ if (!prepared) prepared = prepareRound(); }, 1500);
   if (REMOTE) persist().then(function(r){
     var n = document.getElementById('save-note');
     if (n) n.textContent = r.ok ? 'Score synced.' : 'Couldn’t sync right now — the score is saved on this device and will sync later.';
@@ -686,6 +737,15 @@ function quizView(){
     body = retry + '<div class="qask">Spot it in real life</div>' +
       '<p class="sentence" style="font-weight:700;">' + esc(q.prompt) + '</p>' +
       '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i); }).join('') + '</div>';
+  } else if (q.type === 'analogy'){
+    body = retry + '<div class="qask">Analogy</div>' +
+      '<p class="sentence" style="font-weight:700;">' +
+        esc(q.prompt).replace(/___+/g, '<span class="blank">&nbsp;?&nbsp;</span>') + '</p>' +
+      '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i, 'font-family:Fredoka,sans-serif;font-size:1.05rem;'); }).join('') + '</div>';
+  } else if (q.type === 'oddone'){
+    body = retry + '<div class="qask">Odd one out</div>' +
+      '<p class="sentence" style="font-weight:700;">' + esc(q.prompt) + '</p>' +
+      '<div class="opts">' + q.options.map(function(o, i){ return optBtn(o, i, 'font-family:Fredoka,sans-serif;font-size:1.05rem;'); }).join('') + '</div>';
   } else if (q.type === 'blank'){
     body = retry + '<div class="qask">Finish your sentence</div>' +
       '<p class="sentence">' + esc(q.blank.before) + ' <span class="blank">&nbsp;?&nbsp;</span>' + esc(q.blank.after) + '</p>' +
@@ -706,9 +766,10 @@ function quizView(){
     fb = '<div class="fb ' + (f.correct ? 'good' : 'bad') + '">' +
       (f.correct ? pick(['Nice one!', 'You got it!', 'Correct!', 'Boom!']) : 'Not quite &mdash; the answer is “' + esc(q.answer) + '”') +
       (f.detail ? '<div class="note">' + f.detail + '</div>' : '') +
-      (!f.correct && (q.type === 'syn' || q.type === 'ant' || q.type === 'cloze' || q.type === 'scen')
+      (!f.correct && q.type !== 'meaning' && q.type !== 'blank' && q.type !== 'scramble'
         ? '<div class="note">Remember: <b>' + esc(item.word) + '</b> means ' + esc(item.meaning) +
-          (enrichOf(item) && enrichOf(item).tip ? '<br>' + esc(enrichOf(item).tip) : '') + '</div>' : '') +
+          (q.teach ? '<br>' + esc(q.teach)
+            : (enrichOf(item) && enrichOf(item).tip ? '<br>' + esc(enrichOf(item).tip) : '')) + '</div>' : '') +
       (!f.correct && !session.queue[session.idx].retry ? '<div class="note">You’ll see this one again before the end.</div>' : '') +
       '</div><div class="center" style="margin-top:16px;"><button class="btn primary" data-act="next">' +
       (session.idx + 1 >= session.queue.length ? 'Finish' : 'Next') + ' &rarr;</button></div>';
@@ -783,7 +844,8 @@ function parentView(){
   }
   var focus = sorted.filter(function(r){ return r.s.seen > 0 && (r.a === null || r.a < 0.8 || r.s.box <= 2); }).slice(0, 5);
   var typeNames = { meaning:'Pick the meaning', wordpick:'Pick the word', blank:'Fill in his sentence', scramble:'Unscramble',
-    syn:'Synonyms', ant:'Antonyms', cloze:'New-sentence fit', scen:'Real-life usage' };
+    syn:'Synonyms', ant:'Antonyms', cloze:'New-sentence fit', scen:'Real-life usage',
+    analogy:'Analogies', oddone:'Odd one out' };
   var typeAgg = {};
   state.sessions.forEach(function(ss){
     Object.keys(ss.types || {}).forEach(function(k){
@@ -845,10 +907,21 @@ function parentView(){
             : 'Scores are stored on this device — practice and check progress on the same device, or ask about cloud sync.') + '</p>';
 }
 
+function buildingView(){
+  return '<div class="card home-hero center">' +
+    '<div class="qask">Getting ready</div>' +
+    '<h1 style="margin:6px 0 10px; font-size:1.6rem;">Making your questions&hellip;</h1>' +
+    '<div class="pbar" style="max-width:260px;margin:0 auto 14px;"><div style="width:60%"></div></div>' +
+    '<p class="explain" style="margin:0 0 18px;">Fresh questions are being written for today&rsquo;s words.</p>' +
+    '<button class="btn" data-act="skip-gen">Start without waiting</button>' +
+    '</div>';
+}
+
 function render(){
   var html = header();
   if (view === 'home'){
-    if (session && !session.done) html += quizView();
+    if (awaitingRound) html += buildingView();
+    else if (session && !session.done) html += quizView();
     else if (session && session.done) html += endView();
     else html += homeView();
   } else if (view === 'words') html += wordsView();
@@ -923,6 +996,11 @@ root.addEventListener('click', function(e){
   }
   var act = t.dataset.act;
   if (act === 'start'){ startSession(); return; }
+  if (act === 'skip-gen'){
+    var pend = awaitingRound; awaitingRound = null;
+    if (pend){ pend.state = 'skipped'; pend.questions = {}; launchRound(pend); }
+    return;
+  }
   if (act === 'quit'){ if (confirm('Quit this round? Answered words still count.')) { session = null; render(); } return; }
   if (act === 'next'){ session.idx++; session.feedback = null; nextQuestion(); return; }
   if (act === 'submit-typed'){ submitTyped(); return; }
@@ -956,14 +1034,17 @@ root.addEventListener('click', function(e){
 });
 
 render();
-syncSheet();
+// Prefetch only after the sheet sync and cloud merge settle, so the round is
+// built from the current word list and the up-to-date review schedule.
+var ready = [syncSheet()];
 if (REMOTE){
-  remoteLoad().then(function(remote){
+  ready.push(remoteLoad().then(function(remote){
     var changed = mergeRemote(remote);
     scrub(state);
     if (changed){ saveLocal(); if (!session) render(); }
-    if (dirty) persist().then(function(){ if (!session) render(); });
-  }).catch(function(){});
+    if (dirty) return persist().then(function(){ if (!session) render(); });
+  }).catch(function(){}));
 }
+Promise.all(ready).then(prefetchRound, prefetchRound);
 })();
 </script>
