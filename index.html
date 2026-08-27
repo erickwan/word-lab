@@ -267,7 +267,8 @@ var SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit?gi
 // Cloud score sync (Supabase). Set to null to fall back to on-device storage only.
 var REMOTE = {
   url: 'https://ywoaeadxfettakxehsel.supabase.co',
-  key: 'sb_publishable_grIeEoGO_hvTpDm0dI6bsw_OD4tS041'
+  key: 'sb_publishable_grIeEoGO_hvTpDm0dI6bsw_OD4tS041',
+  row: 'main'
 };
 var LS_KEY = 'word-lab-state-v1';
 var PROFILE = { name:'Wesley', age:'10 years old', goal:'the vocabulary words he collects himself',
@@ -309,7 +310,7 @@ function remoteHeaders(){
   return { apikey: REMOTE.key, Authorization: 'Bearer ' + REMOTE.key, 'Content-Type': 'application/json' };
 }
 async function remoteLoad(){
-  var r = await fetch(REMOTE.url + '/rest/v1/word_lab?id=eq.main&select=state', { headers: remoteHeaders() });
+  var r = await fetch(REMOTE.url + '/rest/v1/word_lab?id=eq.' + REMOTE.row + '&select=state', { headers: remoteHeaders() });
   if (!r.ok) throw new Error('remote load failed');
   var rows = await r.json();
   return rows.length ? rows[0].state : null;
@@ -319,7 +320,7 @@ async function remoteSave(){
   h.Prefer = 'resolution=merge-duplicates';
   var r = await fetch(REMOTE.url + '/rest/v1/word_lab', {
     method: 'POST', headers: h,
-    body: JSON.stringify({ id: 'main', state: state, updated_at: new Date().toISOString() })
+    body: JSON.stringify({ id: REMOTE.row, state: state, updated_at: new Date().toISOString() })
   });
   if (!r.ok) throw new Error('remote save failed');
 }

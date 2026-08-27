@@ -132,6 +132,8 @@ Question types, and when to choose them:
 
 Bias toward the types that test USE and understanding (cloze, scen, analogy, syn, ant) over bare definition matching, especially for words the student has already answered correctly a few times. For a word the student keeps getting wrong, choose a type that teaches: cloze or scen with a strongly disambiguating context.
 
+Where a word arrives with a synonym or antonym the student has already been shown, do not simply reuse it as the correct answer to a synonym or antonym question - that tests recall of the sheet rather than understanding. Use a different but equally correct word, or choose another question type.
+
 Every question must be original. Do not copy sentences from the input. Write at a reading level the student can handle, keeping the difficulty in the vocabulary being tested rather than in the surrounding words.
 
 FEEDBACK. Two fields are shown only after a wrong answer, and together they are the most valuable teaching in the app:
@@ -161,6 +163,8 @@ function userPrompt(words: any[]) {
       `  part of speech: ${w.pos}`,
       `  meaning: ${w.meaning}`,
       w.example ? `  example already shown to the student: ${w.example}` : null,
+      w.syn ? `  synonym the student has already been shown: ${w.syn}` : null,
+      w.ant ? `  antonym the student has already been shown: ${w.ant}` : null,
       `  student history: ${status}`,
     ].filter(Boolean).join("\n");
   });
