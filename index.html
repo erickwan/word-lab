@@ -74,6 +74,10 @@ header.app{display:flex; align-items:center; justify-content:space-between; gap:
 .pos-adverb{background:rgba(150,90,220,.16);}
 .qword{font-family:Fredoka,sans-serif; font-weight:600; font-size:2.1rem; margin:6px 0 2px;}
 .qask{color:var(--muted); font-weight:700; text-transform:uppercase; letter-spacing:.08em; font-size:.78rem;}
+.newbadge{color:var(--accent-deep); font-weight:700; text-transform:uppercase; letter-spacing:.08em; font-size:.78rem;}
+:root[data-theme="dark"] .newbadge{color:var(--accent);}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]) .newbadge{color:var(--accent);}}
+.learncard{border-left:6px solid var(--accent); padding-left:16px; margin-top:10px;}
 .opts{display:flex; flex-direction:column; gap:10px; margin-top:16px;}
 .opt{text-align:left; font-size:1rem; line-height:1.4; padding:13px 16px; border-radius:14px; cursor:pointer;
   background:var(--surface2); color:var(--ink); border:2px solid var(--line); font-family:inherit;}
@@ -277,6 +281,13 @@ ul.tricky b{font-family:Fredoka,sans-serif; font-weight:600;}
 var SHEET_ID = '15mCt0Q2wyCr1r2FjonEo8xXSIZWBT0c77GRdyFg1FhY';
 var SHEET_GID = '0';
 var SHEET_URL = 'https://docs.google.com/spreadsheets/d/' + SHEET_ID + '/edit?gid=' + SHEET_GID;
+/* Curriculum sheet: the pool of words still to learn (Word, Part of speech,
+   Meaning, Synonym, Antonym, Example sentence). DAILY_NEW of them join each
+   day with a preview card; rows never become review words until then. */
+var CUR_SHEET_ID = '190c37nH4QqdHu7QLtROKx7KDNq_FQhCkDU6jOFRKs54';
+var CUR_SHEET_GID = '0';
+var DAILY_NEW = 3;
+var CURRICULUM = [];
 // Cloud score sync (Supabase). Set to null to fall back to on-device storage only.
 var REMOTE = {
   url: 'https://ywoaeadxfettakxehsel.supabase.co',
@@ -427,6 +438,32 @@ async function syncSheet(){
   }
 }
 
+async function syncCurriculum(){
+  try {
+    var r = await fetch('https://docs.google.com/spreadsheets/d/' + CUR_SHEET_ID + '/gviz/tq?tqx=out:json&gid=' + CUR_SHEET_GID);
+    if (!r.ok) throw new Error('curriculum fetch failed');
+    var t = await r.text();
+    var json = JSON.parse(t.substring(t.indexOf('{'), t.lastIndexOf('}') + 1));
+    var out = [], seen = {};
+    json.table.rows.forEach(function(row){
+      var c = (row.c || []).slice(0, 6).map(function(x){ return x ? (x.f != null ? x.f : x.v) : null; });
+      if (!c[0] || !c[2]) return;
+      var word = normWord(c[0]);
+      if (word === 'word' || seen[word]) return;   // header row / in-sheet duplicates
+      seen[word] = 1;
+      var ant = c[4] ? String(c[4]).trim() : '';
+      if (/^no true opposite$/i.test(ant)) ant = '';
+      out.push({
+        id: word.replace(/[^a-z]/g, '') + '-c', word: word, pos: normPos(word, c[1]),
+        meaning: String(c[2]).trim(), syn: c[3] ? String(c[3]).trim() : '',
+        ant: ant, example: c[5] ? String(c[5]).trim() : ''
+      });
+    });
+    CURRICULUM = out;
+    if (!session) render();
+  } catch (e) { /* no curriculum this visit; reviews still work */ }
+}
+
 /* ---------- stats helpers ---------- */
 var EMPTY_STAT = { box:1, due:0, last:0, seen:0, correct:0, wrong:0 };
 function st0(id){ return state.stats[id] || EMPTY_STAT; }
@@ -447,6 +484,23 @@ function dueCounts(){
   return { today:today, tomorrow:tomorrow };
 }
 function startOfDay(t){ var d = new Date(t); d.setHours(0,0,0,0); return d.getTime(); }
+/* Only curriculum introductions (ids ending -c) count against the daily
+   allowance; first-ever practice of an old sheet word does not. */
+function introducedToday(){
+  var t0 = startOfDay(Date.now()), n = 0;
+  Object.keys(state.stats).forEach(function(id){
+    var s = state.stats[id];
+    if (s.first && s.first >= t0 && id.slice(-2) === '-c') n++;
+  });
+  return n;
+}
+function newAllowance(){ return Math.max(0, DAILY_NEW - introducedToday()); }
+function curriculumNew(limit){
+  if (limit <= 0) return [];
+  var have = {};
+  state.items.forEach(function(it){ have[it.word] = 1; });
+  return CURRICULUM.filter(function(w){ return !have[w.word] && !state.stats[w.id]; }).slice(0, limit);
+}
 
 /* ---------- small utils ---------- */
 function shuffle(a){ a = a.slice(); for (var i=a.length-1; i>0; i--){ var j = Math.floor(Math.random()*(i+1)); var t=a[i]; a[i]=a[j]; a[j]=t; } return a; }
@@ -547,11 +601,12 @@ function makeQuestion(item, entry){
   return makeLocalQuestion(item);
 }
 function makeLocalQuestion(item){
+  var isNew = st0(item.id).seen === 0;
   var types = ['meaning', 'wordpick'];
-  var blank = findBlank(item);
+  var blank = !isNew && findBlank(item);
   if (blank) types.push('blank');
-  if (item.word.length <= 12 && item.word.indexOf(' ') < 0) types.push('scramble');
-  var en = enrichOf(item);
+  if (!isNew && item.word.length <= 12 && item.word.indexOf(' ') < 0) types.push('scramble');
+  var en = !isNew && enrichOf(item);
   if (en){
     (en.quiz || []).forEach(function(t){ types.push(t.type, t.type); });   // authored usage questions, double weight
   }
@@ -603,19 +658,26 @@ function makeLocalQuestion(item){
 var session = null;
 function buildQueue(){
   var now = Date.now();
+  // Today's curriculum words get their round slots reserved ahead of reviews.
+  var newbies = curriculumNew(newAllowance());
   var due = state.items.filter(function(it){ return st(it.id).due <= now; });
   due.sort(function(a, b){
     var sa = st(a.id), sb = st(b.id);
     return (sa.box - sb.box) || (sa.due - sb.due) || (a.added < b.added ? -1 : 1);
   });
-  var q = due.slice(0, SESSION_SIZE);
-  if (q.length < SESSION_SIZE){
+  var q = due.slice(0, SESSION_SIZE - newbies.length);
+  if (q.length + newbies.length < SESSION_SIZE){
     var chosen = {}; q.forEach(function(it){ chosen[it.id] = 1; });
     var rest = state.items.filter(function(it){ return !chosen[it.id]; })
       .sort(function(a, b){ return st(a.id).due - st(b.id).due; });
-    q = q.concat(rest.slice(0, SESSION_SIZE - q.length));
+    q = q.concat(rest.slice(0, SESSION_SIZE - q.length - newbies.length));
   }
-  return shuffle(q);
+  var entries = shuffle(q).map(function(it){ return { item:it, retry:false }; });
+  newbies.forEach(function(it, i){
+    entries.splice(Math.min(i * 2, entries.length), 0, { item:it, mode:'learn' });
+  });
+  newbies.forEach(function(it){ entries.push({ item:it, retry:false }); });
+  return { entries: entries, total: q.length + newbies.length };
 }
 /* A round is prepared (queue built + questions requested) before Wesley presses
    Start, so generation latency is hidden. */
@@ -623,12 +685,18 @@ var prepared = null;
 var awaitingRound = null;
 
 function prepareRound(){
-  var items = buildQueue();
-  if (!items.length) return null;
-  var round = { items: items, questions: {}, state:'pending', why:null };
-  round.promise = QGEN.generateCached(QCACHE, GEN_CFG, items.map(function(it){
-    return { item: it, history: st(it.id) };
-  }), PROFILE).then(function(r){
+  var built = buildQueue();
+  if (!built.total) return null;
+  var round = { built: built, questions: {}, state:'pending', why:null };
+  var words = [], seenId = {};
+  built.entries.forEach(function(e){
+    if (e.mode === 'learn' || seenId[e.item.id]) return;
+    seenId[e.item.id] = 1;
+    // Brand-new words get simple local first checks - no generation spend.
+    if (st0(e.item.id).seen === 0) return;
+    words.push({ item: e.item, history: st(e.item.id) });
+  });
+  round.promise = QGEN.generateCached(QCACHE, GEN_CFG, words, PROFILE).then(function(r){
     round.questions = r.questions || {};
     round.state = r.ok ? 'ready' : 'failed';
     round.why = r.why;
@@ -656,8 +724,8 @@ function startSession(){
 }
 function launchRound(round){
   session = {
-    queue: round.items.map(function(it){ return { item:it, retry:false }; }),
-    idx: 0, total: round.items.length, firstTry: {}, streak: 0, bestStreak: 0,
+    queue: round.built.entries,
+    idx: 0, total: round.built.total, firstTry: {}, streak: 0, bestStreak: 0,
     types: {}, missed: {}, done: false,
     gen: round.questions || {}, genState: round.state
   };
@@ -666,6 +734,7 @@ function launchRound(round){
 function nextQuestion(){
   if (session.idx >= session.queue.length){ endSession(); return; }
   var entry = session.queue[session.idx];
+  if (entry.mode === 'learn'){ session.q = null; session.answered = false; render(); return; }
   session.q = makeQuestion(entry.item, entry);
   session.answered = false;
   session.chosen = -1;
@@ -683,6 +752,14 @@ function answer(correct, detail){
     if (!session.types[tk]) session.types[tk] = [0, 0];
     session.types[tk][1]++;
     if (correct) session.types[tk][0]++;
+    if (s.seen === 0){
+      s.first = Date.now();
+      // A curriculum word joins the collection the first time it is answered.
+      if (!state.items.some(function(i){ return i.id === item.id; })){
+        item.added = todayIso();
+        state.items.push(item);
+      }
+    }
     s.seen++; s.last = Date.now();
     if (correct){
       s.correct++;
@@ -1225,9 +1302,13 @@ function homeView(){
   var d = dueCounts();
   var mastered = state.items.filter(function(it){ return st(it.id).box >= 4; }).length;
   var practiced = state.sessions.length;
-  var btnLabel = d.today ? 'Start practice' : 'Extra practice';
-  var sub = d.today
-    ? d.today + (d.today === 1 ? ' word is' : ' words are') + ' ready for review'
+  var freshN = curriculumNew(newAllowance()).length;
+  var btnLabel = (d.today || freshN) ? 'Start practice' : 'Extra practice';
+  var bits = [];
+  if (d.today) bits.push(d.today + (d.today === 1 ? ' word' : ' words') + ' to review');
+  if (freshN) bits.push(freshN + ' new ' + (freshN === 1 ? 'word' : 'words') + ' to meet');
+  var sub = bits.length
+    ? bits.join(' and ') + ' today'
     : 'All caught up! ' + (d.tomorrow ? d.tomorrow + ' due tomorrow.' : 'Nothing due soon.');
   return saveBanner() +
     '<div class="card home-hero center">' +
@@ -1257,7 +1338,33 @@ function wrongPickNote(q){
   return '<div class="note">You picked <b>' + esc(picked) + '</b> &mdash; ' + esc(why) + '</div>';
 }
 
+function progressHead(){
+  return '<div class="progress"><span class="muted" style="font-variant-numeric:tabular-nums;">' +
+    (session.idx + 1) + ' / ' + session.queue.length + '</span>' +
+    '<div class="pbar"><div style="width:' + Math.round(100 * session.idx / session.queue.length) + '%"></div></div>' +
+    (session.streak >= 2 ? '<span class="streak">&#128293; ' + session.streak + '</span>' : '') + '</div>';
+}
+
+function learnView(){
+  var item = session.queue[session.idx].item;
+  return progressHead() + '<div class="card">' +
+    '<div class="newbadge">&#10024; New word</div>' +
+    '<div class="learncard">' +
+    '<div class="qword">' + esc(item.word) + '</div>' +
+    posChip(item.pos) +
+    '<p class="sentence" style="margin:14px 0 6px;"><b>' + esc(item.meaning) + '</b></p>' +
+    (item.example ? '<p class="sentence muted" style="margin:0;">&ldquo;' + esc(item.example) + '&rdquo;</p>' : '') +
+    (item.syn ? '<p class="explain" style="margin:10px 0 0;"><b>Similar word:</b> ' + esc(item.syn) + '</p>' : '') +
+    (item.ant ? '<p class="explain" style="margin:6px 0 0;"><b>Opposite:</b> ' + esc(item.ant) + '</p>' : '') +
+    '</div>' +
+    '<div class="center" style="margin-top:20px;"><button class="btn primary" data-act="next">Got it &rarr;</button></div>' +
+    '</div>' +
+    '<div class="center"><button class="btn" data-act="quit" style="font-size:.9rem;padding:8px 16px;">Quit practice</button></div>';
+}
+
 function quizView(){
+  var entry = session.queue[session.idx];
+  if (entry.mode === 'learn') return learnView();
   var q = session.q, item = q.item;
   var head = '<div class="progress"><span class="muted" style="font-variant-numeric:tabular-nums;">' +
     (session.idx + 1) + ' / ' + session.queue.length + '</span>' +
@@ -1471,7 +1578,7 @@ function parentView(){
     parentWordsCard() +
     sessionsHtml +
     '<div class="card"><h3 style="margin:0 0 6px;">New words</h3>' +
-    '<p class="explain">Words load from the <a href="' + SHEET_URL + '" target="_blank" rel="noopener" style="color:var(--brand);">Google Sheet</a> every time the page opens — add rows there and they show up here automatically.</p>' +
+    '<p class="explain">Words load from the <a href="' + SHEET_URL + '" target="_blank" rel="noopener" style="color:var(--brand);">Google Sheet</a> every time the page opens — add rows there and they show up here automatically. On top of that, ' + DAILY_NEW + ' new words a day join from the <a href="https://docs.google.com/spreadsheets/d/' + CUR_SHEET_ID + '/edit" target="_blank" rel="noopener" style="color:var(--brand);">curriculum sheet</a>, each introduced with a preview card before being quizzed.</p>' +
     '<div style="margin-top:6px;display:flex;gap:10px;align-items:center;">' +
     '<button class="btn accent" data-act="sync">Check for new words</button>' +
     '<span class="explain" id="sync-note">' + syncNote() + '</span></div></div>' +
@@ -1653,7 +1760,7 @@ root.addEventListener('click', function(e){
 render();
 // Prefetch only after the sheet sync and cloud merge settle, so the round is
 // built from the current word list and the up-to-date review schedule.
-var ready = [syncSheet()];
+var ready = [syncSheet(), syncCurriculum()];
 if (REMOTE){
   ready.push(remoteLoad().then(function(remote){
     var changed = mergeRemote(remote);
