@@ -4,30 +4,36 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600&family=Atkinson+Hyperlegible:ital,wght@0,400;0,700;1,400&display=swap">
 <style>
 :root{
-  --bg:#EEF4F5; --surface:#FFFFFF; --surface2:#E0EBEC; --ink:#143137; --muted:#56767C;
-  --brand:#0E7C7B; --brand-deep:#0A5F5E; --brand-soft:#D6EAEA; --on-brand:#FFFFFF;
-  --accent:#F5A800; --accent-deep:#C88900;
+  --bg:#D6ECFF; --bg2:#FFE9D2; --surface:#FFFFFF; --surface2:#E1EEFA; --ink:#12304E; --muted:#527498;
+  --brand:#F2711C; --brand-deep:#C1510A; --brand-soft:#FDE3CE; --on-brand:#FFFFFF;
+  --accent:#F5A800; --accent-deep:#B07B00;
   --good:#2C9C5A; --good-bg:#E2F4E9; --bad:#DE5033; --bad-bg:#FBE9E3;
-  --line:#CFDFE1; --shadow:rgba(20,60,66,.10);
+  --line:#BDD8EE; --shadow:rgba(20,60,110,.12);
+  --tile-a:#D9EDFF; --tile-a-deep:#14508C; --tile-b:#FFE4D1; --tile-b-deep:#9A4108;
+  --tile-c:#DFF5E4; --tile-c-deep:#1F6B3D; --tile-d:#E7EAF3; --tile-d-deep:#3A4E63;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="light"]){
-    --bg:#0C1E22; --surface:#132A2F; --surface2:#1B3940; --ink:#E9F3F3; --muted:#8FAFB4;
-    --brand:#2FAFAC; --brand-deep:#0B4A49; --brand-soft:#174346; --on-brand:#06282A;
+    --bg:#0A1330; --bg2:#231036; --surface:#152244; --surface2:#1E2E5C; --ink:#EAF0FC; --muted:#8FA5C9;
+    --brand:#FF8A3D; --brand-deep:#A34C0E; --brand-soft:#3A2410; --on-brand:#2B1404;
     --accent:#FFC233; --accent-deep:#8A6200;
     --good:#4CC97E; --good-bg:#153826; --bad:#FF8261; --bad-bg:#3D211A;
-    --line:#28484E; --shadow:rgba(0,0,0,.35);
+    --line:#2B3C6E; --shadow:rgba(0,0,0,.35);
+    --tile-a:#16294A; --tile-a-deep:#8FC1F2; --tile-b:#40220F; --tile-b-deep:#F2B58A;
+    --tile-c:#143726; --tile-c-deep:#8ED9AC; --tile-d:#232E44; --tile-d-deep:#A9BCD9;
   }
 }
 :root[data-theme="dark"]{
-  --bg:#0C1E22; --surface:#132A2F; --surface2:#1B3940; --ink:#E9F3F3; --muted:#8FAFB4;
-  --brand:#2FAFAC; --brand-deep:#0B4A49; --brand-soft:#174346; --on-brand:#06282A;
+  --bg:#0A1330; --bg2:#231036; --surface:#152244; --surface2:#1E2E5C; --ink:#EAF0FC; --muted:#8FA5C9;
+  --brand:#FF8A3D; --brand-deep:#A34C0E; --brand-soft:#3A2410; --on-brand:#2B1404;
   --accent:#FFC233; --accent-deep:#8A6200;
   --good:#4CC97E; --good-bg:#153826; --bad:#FF8261; --bad-bg:#3D211A;
-  --line:#28484E; --shadow:rgba(0,0,0,.35);
+  --line:#2B3C6E; --shadow:rgba(0,0,0,.35);
+  --tile-a:#16294A; --tile-a-deep:#8FC1F2; --tile-b:#40220F; --tile-b-deep:#F2B58A;
+  --tile-c:#143726; --tile-c-deep:#8ED9AC; --tile-d:#232E44; --tile-d-deep:#A9BCD9;
 }
 *{box-sizing:border-box}
-body{background:var(--bg); color:var(--ink); margin:0; padding:0 16px 48px;
+body{background:var(--bg) linear-gradient(180deg, var(--bg), var(--bg2)) fixed; color:var(--ink); margin:0; padding:0 16px 48px; min-height:100vh;
   font-family:"Atkinson Hyperlegible", "Trebuchet MS", Verdana, sans-serif; font-size:17px; line-height:1.5;}
 h1,h2,h3,.display{font-family:Fredoka, "Comic Sans MS", "Trebuchet MS", sans-serif; font-weight:600; letter-spacing:.2px; text-wrap:balance;}
 .wrap{max-width:660px; margin:0 auto;}
@@ -54,9 +60,13 @@ header.app{display:flex; align-items:center; justify-content:space-between; gap:
 .center{text-align:center;}
 .home-hero{padding:30px 22px;}
 .tilerow{display:grid; grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:12px; margin-bottom:18px;}
-.tile{background:var(--surface); border:2px solid var(--line); border-radius:14px; padding:14px 16px;}
+.tile{background:var(--surface); border:0; border-radius:16px; padding:14px 16px;}
 .tile .v{font-family:Fredoka,sans-serif; font-weight:600; font-size:1.7rem; font-variant-numeric:tabular-nums;}
-.tile .l{color:var(--muted); font-size:.85rem;}
+.tile .l{font-size:.85rem; opacity:.75;}
+.tilerow .tile:nth-child(4n+1){background:var(--tile-a); color:var(--tile-a-deep);}
+.tilerow .tile:nth-child(4n+2){background:var(--tile-b); color:var(--tile-b-deep);}
+.tilerow .tile:nth-child(4n+3){background:var(--tile-c); color:var(--tile-c-deep);}
+.tilerow .tile:nth-child(4n){background:var(--tile-d); color:var(--tile-d-deep);}
 .chip{display:inline-block; border-radius:999px; padding:2px 10px; font-size:.8rem; font-weight:700;}
 .pos-noun{background:rgba(52,130,208,.16);}
 .pos-verb{background:rgba(222,80,51,.16);}
@@ -1222,7 +1232,7 @@ function homeView(){
   return saveBanner() +
     '<div class="card home-hero center">' +
     '<div class="qask">Hi Wesley</div>' +
-    '<h1 style="margin:6px 0 4px; font-size:1.9rem;">Ready to train your words?</h1>' +
+    '<h1 style="margin:6px 0 4px; font-size:1.9rem;">Ready to train your words? &#128640;</h1>' +
     '<p class="muted" style="margin:0 0 20px;">' + esc(sub) + '</p>' +
     '<button class="btn primary" data-act="start">' + btnLabel + ' &nbsp;&rarr;</button>' +
     '</div>' +
