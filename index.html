@@ -1162,6 +1162,55 @@ function saveBanner(){
     '<button class="btn" data-act="save-now">Sync now</button></div>';
 }
 
+/* ---------- web push reminders (shared practice-reminder edge function) ---------- */
+var PUSH_KEY = 'BLBTwGDq3MjPafFlVfXrL7zhid7VXiA-KRH3hg5pmU3aV9jEu5FXEY_-ccMhsrniCll7T3lxsm_Tly_392nPoTM';
+var PUSH_STUDENT = 'wesley';
+var pushState = null;
+function pushSupported(){
+  return !!REMOTE && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+}
+function b64ToBytes(s){
+  var pad = new Array((4 - s.length % 4) % 4 + 1).join('=');
+  var raw = atob((s + pad).replace(/-/g, '+').replace(/_/g, '/'));
+  var out = new Uint8Array(raw.length);
+  for (var i = 0; i < raw.length; i++) out[i] = raw.charCodeAt(i);
+  return out;
+}
+async function pushSubscribe(){
+  var reg = await navigator.serviceWorker.register('sw.js');
+  var sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(PUSH_KEY) });
+  var body = JSON.stringify({ endpoint: sub.endpoint, sub: sub.toJSON(), student: PUSH_STUDENT });
+  var r = await fetch(REMOTE.url + '/rest/v1/push_subs', {
+    method: 'POST', headers: remoteHeaders(), body: body
+  });
+  // RLS allows insert and update but not select, so upsert's ON CONFLICT
+  // path is unavailable; refresh an existing endpoint with a PATCH instead.
+  if (r.status === 409){
+    r = await fetch(REMOTE.url + '/rest/v1/push_subs?endpoint=eq.' + encodeURIComponent(sub.endpoint), {
+      method: 'PATCH', headers: remoteHeaders(), body: body
+    });
+  }
+  if (!r.ok) throw new Error('push sub save failed');
+}
+function enableReminders(){
+  Notification.requestPermission().then(function(p){
+    if (p !== 'granted'){ pushState = 'denied'; render(); return; }
+    pushSubscribe().then(function(){ pushState = 'on'; render(); })
+      .catch(function(){ pushState = 'failed'; render(); });
+  });
+}
+if (pushSupported() && Notification.permission === 'granted'){
+  pushState = 'on';
+  pushSubscribe().catch(function(){});   // keep the stored endpoint fresh
+}
+function reminderCard(){
+  if (!pushSupported()) return '';
+  if (pushState === 'on') return '<p class="explain center">&#128276; Daily reminders are on for this device.</p>';
+  if (pushState === 'denied') return '<p class="explain center">Notifications are blocked for this site &mdash; enable them in the browser settings to get reminders.</p>';
+  return '<div class="center" style="margin:12px 0;"><button class="btn" data-act="push-on" style="font-size:.9rem;padding:8px 16px;">&#128276; Remind me at 6:30pm on this device</button>' +
+    (pushState === 'failed' ? '<p class="explain">Couldn&rsquo;t turn on reminders &mdash; try again in a bit.</p>' : '') + '</div>';
+}
+
 function homeView(){
   var d = dueCounts();
   var mastered = state.items.filter(function(it){ return st(it.id).box >= 4; }).length;
@@ -1184,6 +1233,7 @@ function homeView(){
     '<div class="tile"><div class="v">' + practiced + '</div><div class="l">practice rounds</div></div>' +
     '</div>' +
     dragonBallCard() +
+    reminderCard() +
     '<p class="explain center">Words you miss come back sooner. Words you know move up levels and rest longer &mdash; level 5 words only visit every two weeks.</p>';
 }
 
@@ -1552,6 +1602,7 @@ root.addEventListener('click', function(e){
     return;
   }
   if (act === 'start'){ startSession(); return; }
+  if (act === 'push-on'){ enableReminders(); return; }
   if (act === 'skip-gen'){
     var pend = awaitingRound; awaitingRound = null;
     if (pend){ pend.state = 'skipped'; pend.questions = {}; launchRound(pend); }

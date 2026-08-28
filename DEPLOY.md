@@ -48,3 +48,18 @@ In `supabase/functions/generate-questions/index.ts`:
 Open an app, start a round, and look for question styles the local
 generator cannot produce — Analogy and Odd one out. The Parent tab's
 "accuracy by question type" also lists them once they have been answered.
+
+# Practice reminders
+
+Wesley's 6:30pm reminder (email with stats and a daily quote, Web Push to
+registered devices, and a parent alert after 2 missed days in a row) is
+served by the shared `practice-reminder` edge function, whose source and
+migrations live in the word-summit repo. This app's part is `sw.js` plus
+the "Remind me at 6:30pm on this device" button, which registers the
+browser in the shared `push_subs` table with `student: 'wesley'`.
+
+Test a push without emailing:
+
+```bash
+curl -s -X POST "https://ywoaeadxfettakxehsel.supabase.co/functions/v1/practice-reminder?push_test=1&student=wesley"
+```
