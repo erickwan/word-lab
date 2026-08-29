@@ -6,7 +6,7 @@ A spaced-repetition vocabulary trainer for Wesley, hosted on GitHub Pages.
 - **Curriculum**: 3 new words a day are drawn, in order, from a second [curriculum sheet](https://docs.google.com/spreadsheets/d/190c37nH4QqdHu7QLtROKx7KDNq_FQhCkDU6jOFRKs54/edit) (columns: Word, Part of speech, Meaning, Synonym, Antonym, Example sentence). Each is introduced with a preview card showing all of that, then quizzed in the same round; rows stay out of the review rotation until their day comes. Duplicate rows and words already collected are skipped.
 - **Practice**: 10-question rounds mixing four question types — pick the meaning, pick the word, fill in the blank in Wesley's own example sentence (typing, with spelling tolerance), and letter-tile unscramble.
 - **Scheduling**: Leitner boxes. Every word starts at level 1; each correct first-try answer moves it up a level with a longer rest (1, 3, 7, 14 days), a miss sends it back to level 1 and repeats it in the round.
-- **Parent tab**: mastery/struggle summary, per-word accuracy and levels, session history, accuracy by question type.
+- **Progress tab**: mastery/struggle summary, per-word accuracy and levels, session history, accuracy by question type.
 - **Scores** persist in `localStorage` per device. Optional cross-device sync via Supabase: set the `REMOTE` config at the top of the script in `index.html`.
 
 Single static file (`index.html`), no build step.
