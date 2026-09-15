@@ -798,7 +798,7 @@ function launchRound(round){
   session = {
     queue: round.built.entries,
     idx: 0, total: round.built.total, firstTry: {}, streak: 0, bestStreak: 0,
-    types: {}, missed: {}, done: false,
+    types: {}, missed: {}, mastered: {}, regressed: {}, done: false,
     gen: round.questions || {}, genState: round.state
   };
   nextQuestion();
@@ -833,14 +833,19 @@ function answer(correct, detail){
       }
     }
     s.seen++; s.last = Date.now();
+    // Crossing the mastered line (box 4) in either direction is reported
+    // per session on the parent dashboard.
+    var wasMastered = s.box >= 4;
     if (correct){
       s.correct++;
       s.box = Math.min(5, s.box + 1);
+      if (!wasMastered && s.box >= 4) session.mastered[item.id] = 1;
       s.due = startOfDay(Date.now()) + INTERVALS[s.box - 1] * DAY + 8*3600000;
       if (s.due <= Date.now()) s.due = Date.now() + DAY;
     } else {
       s.wrong++;
       s.box = 1;
+      if (wasMastered) session.regressed[item.id] = 1;
       s.due = Date.now();
       session.missed[item.id] = 1;
       session.queue.push({ item:item, retry:true });
@@ -857,7 +862,8 @@ function endSession(){
   var correct = ids.filter(function(id){ return session.firstTry[id]; }).length;
   state.sessions.push({
     t: Date.now(), correct: correct, total: session.total,
-    types: session.types, missed: Object.keys(session.missed)
+    types: session.types, missed: Object.keys(session.missed),
+    mastered: Object.keys(session.mastered), regressed: Object.keys(session.regressed)
   });
   saveLocal();
   session.done = true;
