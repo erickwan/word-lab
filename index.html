@@ -322,7 +322,14 @@ var REMOTE = {
 };
 var LS_KEY = 'word-lab-state-v1';
 var PROFILE = { name:'Wesley', age:'10 years old', goal:'the vocabulary words he collects himself',
-                band:'upper-elementary' };
+                band:'upper-elementary',
+  // His favourites, added to the shared settings questions are written around.
+  topics: [
+    'SpaceX rockets and launches',
+    'tennis stars such as Djokovic, Federer, Learner Tien, Nadal, Sinner and Alcaraz',
+    'Dragon Ball Z characters such as Goku, Vegeta, Piccolo and Frieza',
+    'Steve Jobs and Apple products'
+  ] };
 var GEN_CFG = REMOTE ? { url: REMOTE.url, key: REMOTE.key } : null;
 var QCACHE = QGEN.Cache('word-lab-qcache-v1', 14 * 86400000);
 // Two months of what each word has been asked, so a review can be told to do
