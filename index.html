@@ -1187,6 +1187,12 @@ function wordEntries(){
     if (!groups[it.word]){ groups[it.word] = []; order.push(it.word); }
     groups[it.word].push(it);
   });
+  // Curriculum words that haven't joined the collection yet (they only join
+  // once first answered) still belong in the "Not started" bucket.
+  CURRICULUM.forEach(function(w){
+    if (groups[w.word]) return;
+    groups[w.word] = [w]; order.push(w.word);
+  });
   return order.map(function(w){
     var its = groups[w];
     var box = 1, seen = 0, correct = 0, wrong = 0, last = 0, due = Infinity, added = '';
