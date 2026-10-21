@@ -514,6 +514,25 @@ async function persist(){
   catch (e) { return { ok:false }; }
 }
 
+/* ---------- parent-boosted new words ----------
+   Word HQ can queue specific words to introduce next. The list only reorders
+   the unseen-word queue, so an entry for a word already practised is ignored
+   harmlessly, and a fetch failure just means the normal order. */
+var BOOST = [];
+function boostRank(w){
+  var i = BOOST.indexOf(String(w).toLowerCase().trim());
+  return i === -1 ? BOOST.length : i;
+}
+function loadBoost(){
+  if (!REMOTE) return Promise.resolve();
+  return fetch(REMOTE.url + '/rest/v1/word_boost?child=eq.' + REMOTE.row + '&select=words', { headers: remoteHeaders() })
+    .then(function(r){ return r.ok ? r.json() : []; })
+    .then(function(rows){
+      BOOST = ((rows.length && rows[0].words) || []).map(function(w){ return String(w).toLowerCase().trim(); });
+    })
+    .catch(function(){});
+}
+
 /* ---------- word sync from the Google Sheet ---------- */
 var lastSync = null;
 function normWord(w){
@@ -636,7 +655,17 @@ function curriculumNew(limit){
   if (limit <= 0) return [];
   var have = {};
   state.items.forEach(function(it){ have[it.word] = 1; });
-  return CURRICULUM.filter(function(w){ return !have[w.word] && !state.stats[w.id]; }).slice(0, limit);
+  var cands = CURRICULUM.filter(function(w){ return !have[w.word] && !state.stats[w.id]; });
+  if (BOOST.length){
+    // Parent-queued words jump to the front, in the order they were listed.
+    // A collection-sheet word never yet practised can be boosted into a
+    // new-word card too, not just curriculum words.
+    var boosted = state.items.filter(function(it){
+      return st0(it.id).seen === 0 && boostRank(it.word) < BOOST.length;
+    });
+    cands = boosted.concat(cands).sort(function(a, b){ return boostRank(a.word) - boostRank(b.word); });
+  }
+  return cands.slice(0, limit);
 }
 
 /* ---------- small utils ---------- */
@@ -805,7 +834,11 @@ function buildQueue(){
   var now = Date.now();
   // Today's curriculum words get their round slots reserved ahead of reviews.
   var newbies = curriculumNew(newAllowance());
-  var due = state.items.filter(function(it){ return st(it.id).due <= now; });
+  // A boosted collection word arriving as a newbie must not also fill a
+  // review slot — unseen words all read as due.
+  var inNew = {};
+  newbies.forEach(function(it){ inNew[it.id] = 1; });
+  var due = state.items.filter(function(it){ return !inNew[it.id] && st(it.id).due <= now; });
   due.sort(function(a, b){
     var sa = st(a.id), sb = st(b.id);
     return (sa.box - sb.box) || (sa.due - sb.due) || (a.added < b.added ? -1 : 1);
@@ -2129,7 +2162,7 @@ root.addEventListener('click', function(e){
 render();
 // Prefetch only after the sheet sync and cloud merge settle, so the round is
 // built from the current word list and the up-to-date review schedule.
-var ready = [syncSheet(), syncCurriculum()];
+var ready = [syncSheet(), syncCurriculum(), loadBoost()];
 if (REMOTE){
   ready.push(remoteLoad().then(function(remote){
     var changed = mergeRemote(remote);
